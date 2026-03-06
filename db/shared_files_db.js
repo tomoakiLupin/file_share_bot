@@ -54,9 +54,12 @@ class SharedFilesDB {
                                 download_date TEXT,
                                 download_count INTEGER DEFAULT 0,
                                 last_download_time TEXT,
+                                downloaded_files TEXT DEFAULT '[]',
                                 PRIMARY KEY (user_id, download_date)
                             )
                         `);
+                        
+                        this.db.run(`ALTER TABLE user_downloads ADD COLUMN downloaded_files TEXT DEFAULT '[]'`, () => { });
 
                         this.db.run(`
                             CREATE TABLE IF NOT EXISTS user_preferences (
@@ -115,40 +118,52 @@ class SharedFilesDB {
     }
 
     /**
-     * 检查并更新用户的每日下载次数
-     * @returns {boolean} true 表示允许下载，false 表示超过限制
+     * 检查并更新用户的每日下载次数，同一文件当日重复下载不扣次数
+     * @returns {Object} { allowed: boolean, remaining: number, limit: number }
      */
-    async checkAndUpdateDownloadLimit(userId, limit = 75) {
+    async checkAndUpdateDownloadLimit(userId, fileId, limit = 75) {
         await this.initDB();
         return new Promise((resolve, reject) => {
             const today = new Date().toISOString().split('T')[0];
 
             this.db.get(
-                `SELECT download_count FROM user_downloads WHERE user_id = ? AND download_date = ?`,
+                `SELECT download_count, downloaded_files FROM user_downloads WHERE user_id = ? AND download_date = ?`,
                 [userId, today],
                 (err, row) => {
                     if (err) return reject(err);
 
                     if (row) {
-                        if (row.download_count >= limit) {
-                            resolve(false); // 超过限制
-                        } else {
-                            this.db.run(
-                                `UPDATE user_downloads SET download_count = download_count + 1, last_download_time = ? WHERE user_id = ? AND download_date = ?`,
-                                [new Date().toISOString(), userId, today],
-                                (updateErr) => {
-                                    if (updateErr) reject(updateErr);
-                                    else resolve(true);
-                                }
-                            );
+                        let downloadedFiles = [];
+                        if (row.downloaded_files) {
+                            try { downloadedFiles = JSON.parse(row.downloaded_files); } catch(e) {}
                         }
-                    } else {
+                        
+                        if (downloadedFiles.includes(fileId.toString())) {
+                            // Same file already verified today, don't deduct again
+                            return resolve({ allowed: true, remaining: limit - row.download_count, limit: limit });
+                        }
+
+                        if (row.download_count >= limit) {
+                            return resolve({ allowed: false, remaining: 0, limit: limit }); // over limit
+                        }
+                        
+                        downloadedFiles.push(fileId.toString());
                         this.db.run(
-                            `INSERT INTO user_downloads (user_id, download_date, download_count, last_download_time) VALUES (?, ?, 1, ?)`,
-                            [userId, today, new Date().toISOString()],
+                            `UPDATE user_downloads SET download_count = download_count + 1, last_download_time = ?, downloaded_files = ? WHERE user_id = ? AND download_date = ?`,
+                            [new Date().toISOString(), JSON.stringify(downloadedFiles), userId, today],
+                            (updateErr) => {
+                                if (updateErr) reject(updateErr);
+                                else resolve({ allowed: true, remaining: limit - (row.download_count + 1), limit: limit });
+                            }
+                        );
+                    } else {
+                        const downloadedFiles = [fileId.toString()];
+                        this.db.run(
+                            `INSERT INTO user_downloads (user_id, download_date, download_count, last_download_time, downloaded_files) VALUES (?, ?, 1, ?, ?)`,
+                            [userId, today, new Date().toISOString(), JSON.stringify(downloadedFiles)],
                             (insertErr) => {
                                 if (insertErr) reject(insertErr);
-                                else resolve(true);
+                                else resolve({ allowed: true, remaining: limit - 1, limit: limit });
                             }
                         );
                     }

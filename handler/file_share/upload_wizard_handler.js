@@ -369,8 +369,8 @@ class UploadWizardHandler {
 
                 // 在当前频道发送公开下载面板
                 const channel = interaction.channel;
-                const publicMessage = await channel.send('正在生成作品发布处...');
-                await forumPanelHandler.convertToPublicPanel({ message: publicMessage }, fileData);
+                const payload = await forumPanelHandler.convertToPublicPanel(fileData);
+                await channel.send(payload);
 
                 wizardStates.delete(stateId);
                 await interaction.editReply({

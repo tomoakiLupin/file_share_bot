@@ -217,12 +217,11 @@ class ForumCommandsHandler {
             let originalMessage = null;
             try { originalMessage = await interaction.channel.messages.fetch(messageId); } catch (e) { }
 
+            const payload = await forumPanelHandler.convertToPublicPanel(fileData);
             if (originalMessage) {
-                await forumPanelHandler.convertToPublicPanel({ message: originalMessage }, fileData);
-            } else {
-                const tempMsg = await interaction.channel.send('正在生成面板...');
-                await forumPanelHandler.convertToPublicPanel({ message: tempMsg }, fileData);
+                await originalMessage.delete().catch(() => {});
             }
+            await interaction.channel.send(payload);
 
             await interaction.followUp({ content: `✅ 作品已成功发布！文件ID: \`${fileId}\``, flags: [64] });
 

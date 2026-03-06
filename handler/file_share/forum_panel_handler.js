@@ -61,33 +61,39 @@ class ForumPanelHandler {
         const disableAutoPrompt = await this.db.getUserPreference(ownerId);
         if (disableAutoPrompt) return;
 
-        await this.sendAuthorPanel(thread, ownerId);
+        // 加上延迟，避免收到 DiscordAPIError[40058]: Cannot message this thread until after the post author has sent an initial message.
+        setTimeout(async () => {
+            try {
+                await this.sendAuthorPanel(thread, ownerId);
+            } catch (err) {
+                console.error('[ForumPanelHandler] 发送面板时出错:', err);
+            }
+        }, 2000);
     }
 
     /**
      * 构建并发送作者面板
      */
     async sendAuthorPanel(thread_or_interaction, ownerId, editMessage = null) {
-        const container = new ContainerBuilder().setAccentColor(0x2B2D31);
-        container.addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(`<@${ownerId}>\n**📄 作品发布**`)
-        );
-        container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-        container.addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(`本 BOT 提供交互性作品发布功能，支持上传文件并设置获取条件。\n\n**如何发布？**\n点击下方 **[📝 发布作品]** 按钮，系统将弹出可视化配置面板供您设置上传选项。\n\n*如果不需要自动弹出此面板，可点击"不再提示"或使用 \`/关闭自动提示\` 命令。*`)
-        );
+        const embed = new EmbedBuilder()
+            .setAuthor({ name: '作品发布', iconURL: 'https://cdn.discordapp.com/emojis/1126157404415869069.webp?size=96&quality=lossless' }) // Adjust icon to match bot/app icon
+            .setColor(0x00b0f4) // A nice bright color, like the user's screenshot had a green/blue stripe
+            .setDescription(`📄 **作品发布**\n\n本 BOT 为反自动化爬虫脚本的防盗措施，提供交互性作品发布功能\n作者可选择通过本BOT发布作品，用户通过交互性按钮获取作品进行下载\n如果选择不使用本BOT，也建议首楼尽量放置图片，贴内放置作品，以避免简易爬虫批量盗取首楼作品\n\n**作者可选获取作品方式:**\n\n- 无限制: 用户通过点击按钮即可下载作品. 无任何限制\n- 点赞: 用户对首楼进行反应后可下载作品\n- 点赞或评论: 用户对首楼进行反应或发送回复后可下载作品\n- 提取码: 作者在楼内布置提取码. 用户输入提取码后可下载作品\n\n- 注: Bot 会缓存作品文件，由于需要实现在贴内隐藏作品的情况下 Bot 向用户发送作品，Bot 需要先实现缓存作品相关文件才能实现再向用户发送，并且缓存会在删除发布处时同步删除，无法找回。\n- 如使用中有任何问题请前往: 反馈频道`);
 
-        container.addActionRowComponents(
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('wiz_start').setLabel('发布作品').setEmoji('📝').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`fp_remove_panel:${ownerId}`).setLabel('移除消息').setEmoji('⚠️').setStyle(ButtonStyle.Danger),
-                new ButtonBuilder().setCustomId(`fp_disable_prompt:${ownerId}`).setLabel('不再提示').setEmoji('🔕').setStyle(ButtonStyle.Danger)
-            )
+        const actionRow1 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`fp_remove_panel:${ownerId}`).setLabel('⚠️ 从贴内移除本条消息').setStyle(ButtonStyle.Danger)
+        );
+        const actionRow2 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`fp_disable_prompt:${ownerId}`).setLabel('🔕 之后将不再在您的帖子内自动弹出本消息').setStyle(ButtonStyle.Danger)
+        );
+        const actionRow3 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('wiz_start').setLabel('📝 打开发布作品交互面板').setStyle(ButtonStyle.Success)
         );
 
         const payload = {
-            components: [container],
-            flags: [MessageFlags.IsComponentsV2]
+            content: `<@${ownerId}>`,
+            embeds: [embed],
+            components: [actionRow1, actionRow2, actionRow3]
         };
 
         if (editMessage) {
@@ -106,7 +112,7 @@ class ForumPanelHandler {
     /**
      * 将作者私有面板转换为公开的"作品发布处"（用户可下载）
      */
-    async convertToPublicPanel(context, fileRecord) {
+    async convertToPublicPanel(fileRecord) {
         const conditionBold = fileRecord.req_reply ? '点赞并评论' : (fileRecord.req_reaction ? '点赞' : '无限制');
         const captchaText = fileRecord.req_captcha || fileRecord.captcha_text ? `\n> **提取码**: 寻找作者在贴内贴出的提取码` : '';
 
@@ -133,19 +139,19 @@ class ForumPanelHandler {
 
         container.addActionRowComponents(
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`fp_remove_panel:${fileRecord.uploader_id}`).setLabel('移除本条发布处').setEmoji('⚠️').setStyle(ButtonStyle.Danger),
-                new ButtonBuilder().setCustomId(`fp_republish:${fileRecord.uploader_id}`).setLabel('放置新的作品发布处').setEmoji('🆕').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`fp_pin_panel:${fileRecord.uploader_id}`).setLabel('标注/取消标注本消息').setEmoji('📌').setStyle(ButtonStyle.Primary)
+                new ButtonBuilder().setCustomId(`fp_remove_panel:${fileRecord.uploader_id}`).setLabel('⚠️ 移除本条发布处').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId(`fp_republish:${fileRecord.uploader_id}`).setLabel('🆕 放置新的作品发布处').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`fp_pin_panel:${fileRecord.uploader_id}`).setLabel('📌 标注/取消标注本消息').setStyle(ButtonStyle.Primary)
             ),
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`fp_get_work:${fileRecord.id}`).setLabel('获取作品').setEmoji('🎁').setStyle(ButtonStyle.Primary)
+                new ButtonBuilder().setCustomId(`fp_get_work:${fileRecord.id}`).setLabel('🎁 获取作品').setStyle(ButtonStyle.Primary)
             )
         );
 
-        await context.message.edit({
+        return {
             components: [container],
             flags: [MessageFlags.IsComponentsV2]
-        });
+        };
     }
 }
 

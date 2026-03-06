@@ -24,14 +24,15 @@ class GetFileHandler {
             }
 
             // 特权：如果当前用户是该文件的发布者，则无视所有限制，直接放行
+            const dailyLimit = config.get('bot_config.file_share.daily_download_limit', 75);
+            
             if (userId === fileRecord.uploader_id) {
-                return await this.sendFile(interaction, fileRecord);
+                return await this.sendFile(interaction, fileRecord, { remaining: '不限', limit: dailyLimit });
             }
 
             // 2. 检查每日下载限制
-            const dailyLimit = config.get('bot_config.file_share.daily_download_limit', 75);
-            const canDownload = await this.db.checkAndUpdateDownloadLimit(userId, dailyLimit);
-            if (!canDownload) {
+            const downloadStatus = await this.db.checkAndUpdateDownloadLimit(userId, fileRecord.id, dailyLimit);
+            if (!downloadStatus.allowed) {
                 return await interaction.editReply({ content: `❌ 您今天的下载次数已达上限 (${dailyLimit} 次)，请明天再来！` });
             }
 
@@ -99,9 +100,9 @@ class GetFileHandler {
 
             // 4. 处理验证码 / 条款确认流程
             if (fileRecord.req_terms || fileRecord.req_captcha || fileRecord.captcha_text) {
-                await this.handleVerificationFlow(interaction, fileRecord);
+                await this.handleVerificationFlow(interaction, fileRecord, downloadStatus);
             } else {
-                await this.sendFile(interaction, fileRecord);
+                await this.sendFile(interaction, fileRecord, downloadStatus);
             }
 
         } catch (error) {
@@ -110,7 +111,7 @@ class GetFileHandler {
         }
     }
 
-    async handleVerificationFlow(interaction, fileRecord) {
+    async handleVerificationFlow(interaction, fileRecord, downloadStatus) {
         // 步骤 1：验证码（如有）
         if (fileRecord.req_captcha || fileRecord.captcha_text) {
             const passed = await this.doCaptchaStep(interaction, fileRecord);
@@ -123,7 +124,7 @@ class GetFileHandler {
             if (!agreed) return;
         }
 
-        await this.sendFile(interaction, fileRecord);
+        await this.sendFile(interaction, fileRecord, downloadStatus);
     }
 
     async doCaptchaStep(interaction, fileRecord) {
@@ -237,28 +238,82 @@ class GetFileHandler {
         });
     }
 
-    async sendFile(interaction, fileRecord) {
+    async getFileSize(url) {
+        const http = require('http');
+        const https = require('https');
+        return new Promise((resolve) => {
+            const client = url.startsWith('https') ? https : http;
+            const req = client.request(url, { method: 'HEAD' }, (res) => {
+                const size = res.headers['content-length'];
+                if (size) {
+                    const kb = (parseInt(size) / 1024).toFixed(2);
+                    resolve(`${kb} KB`);
+                } else {
+                    resolve('未知大小');
+                }
+            });
+            req.on('error', () => resolve('未知大小'));
+            req.setTimeout(3000, () => resolve('未知大小'));
+            req.end();
+        });
+    }
+
+    async sendFile(interaction, fileRecord, downloadStatus) {
         try {
             await interaction.editReply({ content: '✅ 验证通过，正在生成文件...', embeds: [], components: [] });
 
             const attachments = [];
             const primaryName = fileRecord.file_name?.split(', ')[0] || `file_${fileRecord.id}`;
-            attachments.push(new AttachmentBuilder(fileRecord.file_url).setName(primaryName));
+            const primaryUrl = fileRecord.file_url;
+            
+            const allFiles = [{ name: primaryName, url: primaryUrl }];
 
             if (fileRecord.extra_files) {
                 let extra = [];
                 try { extra = JSON.parse(fileRecord.extra_files); } catch (e) { /* ignore */ }
                 for (const f of extra) {
-                    attachments.push(new AttachmentBuilder(f.url).setName(f.name));
+                    allFiles.push(f);
+                }
+            }
+            
+            let imagesDescription = '';
+            let othersDescription = '';
+            
+            const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+            
+            for (const file of allFiles) {
+                attachments.push(new AttachmentBuilder(file.url).setName(file.name));
+                const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+                const sizeStr = await this.getFileSize(file.url);
+                
+                if (imageExts.includes(ext)) {
+                    imagesDescription += `🖼️ ${file.name}\n**大小:** ${sizeStr}\n>>[点击下载](${file.url})<<\n\n`;
+                } else {
+                    othersDescription += `📄 ${file.name}\n**大小:** ${sizeStr}\n>>[点击下载](${file.url})<<\n\n`;
                 }
             }
 
-            const fileCount = attachments.length;
-            // 覆盖当前的交互回复，这样文件和初始按钮就在同一条单独可见的消息里了
+            const embed = new EmbedBuilder()
+                .setTitle('🎈 获取作品')
+                .setColor(0x2ecc71); // Green color matching screenshot
+                
+            let desc = `今日剩余可获取作品量: ${downloadStatus.remaining}/${downloadStatus.limit}\n`;
+            desc += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+            
+            if (imagesDescription) {
+                desc += `**以下为图片附件:**\n> 右键或长按图片下载，或点击超链接下载\n\n${imagesDescription}`;
+            }
+            if (othersDescription) {
+                desc += `**以下为非图片附件:**\n> 点击超链接下载\n\n${othersDescription}`;
+            }
+            
+            embed.setDescription(desc.trim());
+            embed.setFooter({ text: '如使用中有任何问题或建议请前往: 反馈频道' });
+
             await interaction.editReply({
-                content: `✅ 文件加载成功！\n文件ID: \`${fileRecord.id}\`\n共 **${fileCount}** 个文件`,
+                content: '',
                 files: attachments,
-                embeds: [],
+                embeds: [embed],
                 components: []
             }).catch(err => console.error('[GetFileHandler] editReply failed:', err));
 
