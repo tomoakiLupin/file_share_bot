@@ -1,0 +1,19 @@
+{
+    "name": "file-share-bot",
+    "version": "1.0.0",
+    "description": "A standalone Discord file-sharing bot",
+    "main": "main.js",
+    "scripts": {
+        "start": "node main.js",
+        "dev": "node --watch main.js"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "discord.js": "^14.25.1",
+        "dotenv": "^16.4.5",
+        "sqlite3": "^5.1.7"
+    },
+    "type": "commonjs"
+}

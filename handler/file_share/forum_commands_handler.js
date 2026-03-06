@@ -1,0 +1,232 @@
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const forumPanelHandler = require('./forum_panel_handler');
+const { getDbInstance } = require('../../db/shared_files_db');
+
+class ForumCommandsHandler {
+    constructor() {
+        this.db = getDbInstance();
+    }
+
+    // ========== SLASH COMMAND EXECUTORS ==========
+
+    /** /发布作品 */
+    async execute发布作品(interaction) {
+        const authError = await forumPanelHandler.checkEligibility(interaction);
+        if (authError) return await forumPanelHandler.sendAuthFailed(interaction, authError);
+
+        // 仅限帖子作者或管理员
+        if (interaction.channel?.isThread()) {
+            if (
+                interaction.user.id !== interaction.channel.ownerId &&
+                !interaction.member.permissions.has('Administrator')
+            ) {
+                return await interaction.reply({ content: '❌ 权限不足：只有本帖的发布者（楼主）才能在此发布作品。', flags: [64] });
+            }
+        }
+
+        const uploadWizardHandler = require('./upload_wizard_handler');
+        await uploadWizardHandler.startWizard(interaction);
+    }
+
+    /** /关闭自动提示 */
+    async execute关闭自动提示(interaction) {
+        await interaction.deferReply({ flags: [64] });
+        await this.db.setUserPreference(interaction.user.id, true);
+        await interaction.editReply({ content: '✅ 已关闭发帖时的自动提示。您仍可使用 `/发布作品` 手动呼出面板。' });
+    }
+
+    /** /启用自动提示 */
+    async execute启用自动提示(interaction) {
+        await interaction.deferReply({ flags: [64] });
+        await this.db.setUserPreference(interaction.user.id, false);
+        await interaction.editReply({ content: '✅ 已启用发帖时的自动提示。' });
+    }
+
+    /** /获取作品（获取当前帖子最新文件） */
+    async execute获取作品(interaction) {
+        const authError = await forumPanelHandler.checkEligibility(interaction);
+        if (authError) return await forumPanelHandler.sendAuthFailed(interaction, authError);
+
+        const sourceMessageId = interaction.channelId;
+        const latestFile = await this.db.getLatestFileBySourceMessage(sourceMessageId);
+
+        if (!latestFile) {
+            return await interaction.reply({ content: '❌ 本帖内尚未发布任何作品，或作品已被移除。', flags: [64] });
+        }
+
+        const getFileHandler = require('./get_file_handler');
+        const originalOptions = interaction.options;
+        interaction.options = {
+            getString: (name) => name === 'file_id' ? latestFile.id : originalOptions.getString(name)
+        };
+        await getFileHandler.execute(interaction);
+    }
+
+    /** /移除作品 */
+    async execute移除作品(interaction) {
+        await interaction.deferReply({ flags: [64] });
+
+        const fileId = interaction.options.getString('file_id').trim();
+        const isAdmin = interaction.member.permissions.has('Administrator');
+
+        try {
+            const success = await this.db.deleteFileRecord(fileId, interaction.user.id, isAdmin);
+            if (success) {
+                await interaction.editReply({ content: `✅ 文件 \`${fileId}\` 及其所有访问信息已彻底删除。` });
+            } else {
+                await interaction.editReply({ content: `❌ 未找到编号为 \`${fileId}\` 的文件，或您没有删除权限（仅发布者或管理员可删除）。` });
+            }
+        } catch (error) {
+            console.error('[ForumCommandsHandler] 删除文件失败:', error);
+            await interaction.editReply({ content: '❌ 删除过程中发生数据库错误。' });
+        }
+    }
+
+    // 通用 execute 入口，由 CommandRegistry 调用
+    async execute(interaction) {
+        const name = interaction.commandName;
+        const methodName = `execute${name}`;
+        if (typeof this[methodName] === 'function') {
+            return await this[methodName](interaction);
+        }
+        await interaction.reply({ content: '❌ 未找到对应的处理逻辑', flags: [64] });
+    }
+
+    // ========== BUTTON HANDLERS ==========
+
+    async handleButton(interaction) {
+        const customId = interaction.customId;
+
+        // 【移除消息】
+        if (customId.startsWith('fp_remove_panel:')) {
+            const uploaderId = customId.split(':')[1];
+            if (interaction.user.id !== uploaderId && !interaction.member.permissions.has('Administrator')) {
+                return await interaction.reply({ content: '❌ 只有发布者或管理员可以移除此面板。', flags: [64] });
+            }
+            await interaction.message.delete();
+            return;
+        }
+
+        // 【不再提示】
+        if (customId.startsWith('fp_disable_prompt:')) {
+            const uploaderId = customId.split(':')[1];
+            if (interaction.user.id !== uploaderId) {
+                return await interaction.reply({ content: '❌ 只有发布者可以操作此面板。', flags: [64] });
+            }
+            await this.db.setUserPreference(interaction.user.id, true);
+            await interaction.reply({ content: '✅ 已关闭自动提示。可使用 `/启用自动提示` 重新开启。', flags: [64] });
+            await interaction.message.delete();
+            return;
+        }
+
+        // 【重新发布】
+        if (customId.startsWith('fp_republish:')) {
+            const uploaderId = customId.split(':')[1];
+            if (interaction.user.id !== uploaderId && !interaction.member.permissions.has('Administrator')) {
+                return await interaction.reply({ content: '❌ 只有该帖子的作者可以重新发布作品。', flags: [64] });
+            }
+            await interaction.reply({ content: '💡 **请在聊天框再次输入 `/发布作品` 命令。**\n\n这会弹出配置面板供您上传新文件并覆盖之前的发布处。', flags: [64] });
+            return;
+        }
+
+        // 【获取作品】
+        if (customId.startsWith('fp_get_work:')) {
+            const fileId = customId.split(':')[1];
+            const getFileHandler = require('./get_file_handler');
+
+            const pseudoInteraction = new Proxy(interaction, {
+                get(target, prop, receiver) {
+                    if (prop === 'options') {
+                        return {
+                            getString: (name) => name === 'file_id' ? fileId : null
+                        };
+                    }
+                    const value = Reflect.get(target, prop, receiver);
+                    return typeof value === 'function' ? value.bind(target) : value;
+                }
+            });
+
+            try {
+                await getFileHandler.execute(pseudoInteraction);
+            } catch (err) {
+                console.error('[ForumCommandsHandler] 获取作品按钮出错:', err);
+                const reply = { content: '❌ 获取作品时发生系统错误。', flags: [64] };
+                if (interaction.replied || interaction.deferred) await interaction.editReply(reply);
+                else await interaction.reply(reply);
+            }
+            return;
+        }
+    }
+
+    // ========== MODAL HANDLERS ==========
+
+    async handleModalSubmit(interaction) {
+        if (!interaction.customId.startsWith('modal_publish_work:')) return false;
+
+        const messageId = interaction.customId.split(':')[1];
+        await interaction.deferUpdate();
+
+        try {
+            const fileUrl = interaction.fields.getTextInputValue('file_url').trim();
+            const conditionsStr = interaction.fields.getTextInputValue('conditions').trim();
+
+            const reqReaction = conditionsStr.includes('1');
+            const reqCaptcha = conditionsStr.includes('2');
+            const reqTerms = conditionsStr.includes('3');
+            const sourceMessageId = interaction.channelId;
+
+            let fileName = fileUrl.split('/').pop().split('?')[0];
+            if (!fileName || fileName.length < 3) fileName = `file_${Date.now()}`;
+
+            const fileId = await this.db.getNextFileId();
+            const fileData = {
+                id: fileId,
+                uploader_id: interaction.user.id,
+                file_name: fileName,
+                file_url: fileUrl,
+                upload_time: new Date().toISOString(),
+                source_message_id: sourceMessageId,
+                req_reaction: reqReaction,
+                req_captcha: reqCaptcha,
+                req_terms: reqTerms
+            };
+
+            await this.db.saveFileRecord(fileData);
+
+            let originalMessage = null;
+            try { originalMessage = await interaction.channel.messages.fetch(messageId); } catch (e) { }
+
+            if (originalMessage) {
+                await forumPanelHandler.convertToPublicPanel({ message: originalMessage }, fileData);
+            } else {
+                const tempMsg = await interaction.channel.send('正在生成面板...');
+                await forumPanelHandler.convertToPublicPanel({ message: tempMsg }, fileData);
+            }
+
+            await interaction.followUp({ content: `✅ 作品已成功发布！文件ID: \`${fileId}\``, flags: [64] });
+
+        } catch (error) {
+            console.error('[ForumCommandsHandler] 发布模态框处理错误:', error);
+            await interaction.followUp({ content: '❌ 保存文件信息失败。', flags: [64] });
+        }
+
+        return true;
+    }
+}
+
+const instance = new ForumCommandsHandler();
+
+// 为 CommandRegistry 注册多个命令名 → 同一个 handler
+const commandNames = ['发布作品', '关闭自动提示', '启用自动提示', '获取作品', '移除作品'];
+module.exports = instance;
+
+// 导出各命令的独立 handler 对象供 command_registry 使用
+for (const name of commandNames) {
+    const handlerObj = {
+        commandName: name,
+        requiredPermission: 0,
+        execute: (interaction) => instance.execute(interaction)
+    };
+    // 挂载到 module.exports 便于外部直接引用
+    module.exports[name] = handlerObj;
+}

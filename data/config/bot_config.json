@@ -1,0 +1,43 @@
+{
+    "main_config": {
+        "safety_setting": {
+            "command_push_guildids": [
+                "YOUR_GUILD_ID_HERE"
+            ],
+            "developers_userid": [
+                "YOUR_DEVELOPER_USER_ID"
+            ],
+            "admin_roleid": [
+                "YOUR_ADMIN_ROLE_ID"
+            ],
+            "user_roleid": []
+        }
+    },
+    "file_share": {
+        "forum_channel_ids": [
+            "YOUR_FORUM_CHANNEL_ID_HERE"
+        ],
+        "daily_download_limit": 75
+    },
+    "logger": {
+        "log_channel_id": "YOUR_LOG_CHANNEL_ID_HERE",
+        "log_levels": {
+            "info": {
+                "name": "ℹ️ 信息",
+                "color": "#3498db"
+            },
+            "success": {
+                "name": "✅ 成功",
+                "color": "#2ecc71"
+            },
+            "warning": {
+                "name": "⚠️ 警告",
+                "color": "#f39c12"
+            },
+            "error": {
+                "name": "❌ 错误",
+                "color": "#e74c3c"
+            }
+        }
+    }
+}

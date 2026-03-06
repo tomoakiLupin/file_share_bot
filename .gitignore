@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Environment variables (sensitive!)
+.env
+
+# Database / data files
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# PM2 logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
