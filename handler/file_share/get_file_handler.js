@@ -23,6 +23,11 @@ class GetFileHandler {
                 return await interaction.editReply({ content: '❌ 找不到该文件，请检查文件ID是否正确。' });
             }
 
+            // 特权：如果当前用户是该文件的发布者，则无视所有限制，直接放行
+            if (userId === fileRecord.uploader_id) {
+                return await this.sendFile(interaction, fileRecord);
+            }
+
             // 2. 检查每日下载限制
             const dailyLimit = config.get('bot_config.file_share.daily_download_limit', 75);
             const canDownload = await this.db.checkAndUpdateDownloadLimit(userId, dailyLimit);

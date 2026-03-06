@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, SectionBuilder, ContainerBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder, FileBuilder, AttachmentBuilder } = require('discord.js');
 const https = require('https');
 const forumPanelHandler = require('./forum_panel_handler');
 const { getDbInstance } = require('../../db/shared_files_db');
@@ -50,123 +50,161 @@ class UploadWizardHandler {
         const messagePayload = this.buildWizardPayload(stateId);
 
         if (interaction.deferred || interaction.replied) {
-            await interaction.followUp({ ...messagePayload, flags: [64] });
+            await interaction.followUp(messagePayload);
         } else {
-            await interaction.reply({ ...messagePayload, flags: [64] });
+            await interaction.reply(messagePayload);
         }
     }
 
     buildWizardPayload(stateId) {
         const state = wizardStates.get(stateId);
-        if (!state) return { content: '❌ 会话已过期，请重新使用命令。', components: [] };
+        if (!state) return { components: [new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent('❌ 会话已过期，请重新使用命令。'))], flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral] };
 
-        const modeLabel = state.mode === 0 ? '无限制' : (state.mode === 1 ? '点赞' : '点赞并评论');
+        const modeLabel = state.mode === 0 ? '无限制' : (state.mode === 1 ? '点赞' : '点赞或回复');
 
-        const embed = new EmbedBuilder()
-            .setTitle('📦 作品发布面板')
-            .setColor(0x2f3136)
-            .setDescription(
-                `**获取作品需求**\n当前模式: **${modeLabel}**\n\n` +
-                `**提取码**\n` +
-                `点击按钮切换是否启用来和上方的需求进行组合(无限制+启用提取码为纯提取码模式)\n` +
-                `📍 记得将提取码置于贴内\n` +
-                `⚠️ 开头或结尾的空格将被自动清理\n\n` +
-                `**获取次数设置**\n` +
-                `可以设置当用户的当日获取作品次数耗尽时，是否依然允许其获取本作品？\n` +
-                `当前设置: **${state.daily_limit ? '每日限定' : '开放分享'}**: ${state.daily_limit ? '用户的每日获取作品次数耗尽后无法获取本作品' : '用户的每日获取作品次数耗尽后仍可获取本作品'}\n\n` +
-                `**作者声明**\n` +
-                `当前状态: **${state.terms_enabled ? '已启用' : '已关闭'}**\n` +
-                `> 在用户下载作品前将先展示声明内容提示一遍用户，要求用户二次确认声明内容\n\n` +
-                `**当前声明内容:**\n` +
-                `\`\`\`\n${state.terms_content || '已禁用'}\n\`\`\`\n` +
-                `**─────────────────**\n` +
-                `**当前附件:** ${state.file_name ? `✅ 已添加: **${state.file_name}**` : '❌ 未添加'}\n\n` +
-                `*如使用中有任何问题或建议请前往反馈频道*`
-            );
+        const container = new ContainerBuilder().setAccentColor(0x3498db);
 
-        const embeds = [embed];
+        // Header Title
+        container.addTextDisplayComponents(new TextDisplayBuilder().setContent('**作品发布面板**'));
+        container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
 
+        // Part 1: 获取作品需求 (Mode)
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent('**获取作品需求**'),
+            new TextDisplayBuilder().setContent(`当前模式: **${modeLabel}**`)
+        );
+
+        container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`wiz_mode_0:${stateId}`).setLabel('☀️ 无限制').setStyle(state.mode === 0 ? ButtonStyle.Success : ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId(`wiz_mode_1:${stateId}`).setLabel('❤️ 点赞').setStyle(state.mode === 1 ? ButtonStyle.Danger : ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId(`wiz_mode_2:${stateId}`).setLabel('🎁 点赞或回复').setStyle(state.mode === 2 ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            )
+        );
+
+        container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+
+        // Part 2: 提取码 (Captcha)
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent('**提取码**'),
+            new TextDisplayBuilder().setContent(`> 点击按钮切换是否启用来和上方的需求进行组合(无限制+启用提取码为纯提取码模式)\n> 📍 记得将提取码置于贴内\n> ⚠️ 开头或结尾的空格将被自动清理`)
+        );
+
+        container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`wiz_captcha:${stateId}`)
+                    .setLabel(state.captcha !== null ? `# 提取码: 已开启 (${state.captcha})` : '# 提取码: 已关闭')
+                    .setStyle(state.captcha !== null ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            )
+        );
+
+        container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+
+        // Part 3: 获取次数设置 (Limit)
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent('**获取次数设置**'),
+            new TextDisplayBuilder().setContent(`可以设置当用户的当日获取作品次数耗尽时，是否依然允许其获取本作品？\n当前设置: ${state.daily_limit ? '每日限定: 用户的每日获取作品次数耗尽后**无法获取本作品**' : '开放分享: 用户的每日获取作品次数耗尽后**仍可获取本作品**'}`)
+        );
+
+        container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`wiz_limit_0:${stateId}`)
+                    .setLabel('🎀 开放分享')
+                    .setStyle(!state.daily_limit ? ButtonStyle.Success : ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId(`wiz_limit_1:${stateId}`)
+                    .setLabel('🏷️ 每日限定')
+                    .setStyle(state.daily_limit ? ButtonStyle.Danger : ButtonStyle.Secondary)
+            )
+        );
+
+        container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+
+        // Part 4: 作者声明 (Terms)
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent('**作者声明**'),
+            new TextDisplayBuilder().setContent(`当前状态: **${state.terms_enabled ? '已启用' : '已关闭'}**\n> 在用户下载作品前将先使用本条内容提示一遍用户，要求用户二次确认声明内容`)
+        );
+
+        container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`wiz_terms_on:${stateId}`)
+                    .setLabel('🔔 启用')
+                    .setStyle(state.terms_enabled ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId(`wiz_terms_off:${stateId}`)
+                    .setLabel('🔕 关闭')
+                    .setStyle(!state.terms_enabled ? ButtonStyle.Danger : ButtonStyle.Secondary)
+            )
+        );
+
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent('**当前声明内容:**'),
+            new TextDisplayBuilder().setContent(`${state.terms_content ? `> ${state.terms_content.split('\n').join('\n> ')}` : '已禁用'}`)
+        );
+
+        container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`wiz_terms_input:${stateId}`)
+                    .setLabel('📝 输入声明')
+                    .setStyle(state.terms_enabled ? ButtonStyle.Success : ButtonStyle.Secondary)
+                    .setDisabled(false)
+            )
+        );
+
+        container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(`**当前附件:** ${state.files ? `✅ 已添加 ${state.files.length} 个文件` : '❌ 未添加'}\n如使用中有任何问题或建议请前往反馈频道`)
+        );
+
+        const attachments = [];
+        const filesToComponents = [];
+
+        // ✅ Add Image Previews
         if (state.files && state.files.length > 0) {
-            let firstImageSet = false;
-            for (const file of state.files) {
-                const isImage = file.contentType ? file.contentType.startsWith('image/') : !!file.name.match(/\.(png|jpg|jpeg|gif|webp)$/i);
-                if (isImage) {
-                    if (!firstImageSet) {
-                        embed.setImage(file.url);
-                        firstImageSet = true;
-                    } else {
-                        const extraEmbed = new EmbedBuilder().setImage(file.url).setColor(0x2f3136);
-                        embeds.push(extraEmbed);
-                        if (embeds.length >= 10) break;
-                    }
+            const imageFiles = state.files.filter(f => f.contentType && f.contentType.startsWith('image/'));
+            if (imageFiles.length > 0) {
+                const mediaGallery = new MediaGalleryBuilder();
+                for (const img of imageFiles) {
+                    mediaGallery.addItems(new MediaGalleryItemBuilder().setURL(img.url));
                 }
+                container.addMediaGalleryComponents(mediaGallery);
             }
-        } else if (state.file_url && state.file_content_type?.startsWith('image/')) {
-            embed.setImage(state.file_url);
+
+            const nonImageFiles = state.files.filter(f => !f.contentType || !f.contentType.startsWith('image/'));
+            if (nonImageFiles.length > 0) {
+                container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`📎 包含 ${nonImageFiles.length} 个其他附件格式`));
+            }
         }
 
-        // Row 1: 获取模式
-        const row1 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`wiz_mode_0:${stateId}`).setLabel('☀️ 无限制').setStyle(state.mode === 0 ? ButtonStyle.Success : ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`wiz_mode_1:${stateId}`).setLabel('❤️ 点赞').setStyle(state.mode === 1 ? ButtonStyle.Danger : ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`wiz_mode_2:${stateId}`).setLabel('🎁 点赞并评论').setStyle(state.mode === 2 ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`wiz_file:${stateId}`)
+                    .setLabel(state.files ? '➕ 重新上传作品' : '➕ 添加作品')
+                    .setStyle(ButtonStyle.Primary)
+            ),
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`wiz_submit:${stateId}`)
+                    .setLabel('📩 发布')
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(!state.files),
+                new ButtonBuilder()
+                    .setCustomId(`wiz_cancel:${stateId}`)
+                    .setLabel('⚠️ 取消')
+                    .setStyle(ButtonStyle.Danger)
+            )
         );
 
-        // Row 2: 提取码 & 次数限制
-        const row2 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`wiz_captcha:${stateId}`)
-                .setLabel(state.captcha !== null ? `# 提取码: 已开启 (${state.captcha})` : '# 提取码: 已关闭')
-                .setStyle(state.captcha !== null ? ButtonStyle.Primary : ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`wiz_limit_0:${stateId}`)
-                .setLabel('🎀 开放分享')
-                .setStyle(!state.daily_limit ? ButtonStyle.Success : ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`wiz_limit_1:${stateId}`)
-                .setLabel('🏷️ 每日限定')
-                .setStyle(state.daily_limit ? ButtonStyle.Danger : ButtonStyle.Secondary)
-        );
-
-        // Row 3: 声明
-        const row3 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`wiz_terms_on:${stateId}`)
-                .setLabel('🔔 启用')
-                .setStyle(state.terms_enabled ? ButtonStyle.Success : ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`wiz_terms_off:${stateId}`)
-                .setLabel('🔕 关闭')
-                .setStyle(!state.terms_enabled ? ButtonStyle.Danger : ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`wiz_terms_input:${stateId}`)
-                .setLabel('📝 输入声明')
-                .setStyle(ButtonStyle.Success)
-                .setDisabled(!state.terms_enabled)
-        );
-
-        // Row 4: 附件
-        const row4 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`wiz_file:${stateId}`)
-                .setLabel(state.file_name ? '➕ 添加作品' : '➕ 添加作品')
-                .setStyle(ButtonStyle.Primary)
-        );
-
-        // Row 5: 提交和取消
-        const row5 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`wiz_submit:${stateId}`)
-                .setLabel('📩 发布')
-                .setStyle(ButtonStyle.Success)
-                .setDisabled(!state.file_name),
-            new ButtonBuilder()
-                .setCustomId(`wiz_cancel:${stateId}`)
-                .setLabel('⚠️ 取消')
-                .setStyle(ButtonStyle.Danger)
-        );
-
-        return { content: '', embeds: embeds, components: [row1, row2, row3, row4, row5] };
+        return {
+            components: [container],
+            flags: [MessageFlags.Ephemeral, MessageFlags.IsComponentsV2]
+        };
     }
 
     async handleButton(interaction) {
@@ -180,7 +218,7 @@ class UploadWizardHandler {
                     interaction.user.id !== interaction.channel.ownerId &&
                     !interaction.member?.permissions.has('Administrator')
                 ) {
-                    await interaction.reply({ content: '❌ 权限不足：只有本帖的发布者（楼主）才能在此发布作品。', flags: [64] });
+                    await interaction.reply({ components: [new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent('❌ 权限不足：只有本帖的发布者（楼主）才能在此发布作品。'))], flags: [MessageFlags.Ephemeral, MessageFlags.IsComponentsV2] });
                     return true;
                 }
             }
@@ -194,7 +232,7 @@ class UploadWizardHandler {
 
         const state = wizardStates.get(stateId);
         if (!state) {
-            return await interaction.reply({ content: '❌ 该面板已失效，请重新使用命令。', flags: [64] });
+            return await interaction.reply({ components: [new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent('❌ 该面板已失效，请重新使用命令。'))], flags: [MessageFlags.Ephemeral, MessageFlags.IsComponentsV2] });
         }
 
         // 状态修改
@@ -294,13 +332,13 @@ class UploadWizardHandler {
         // 取消
         if (action === 'wiz_cancel') {
             wizardStates.delete(stateId);
-            return await interaction.update({ content: '已取消发布。', embeds: [], components: [] });
+            return await interaction.update({ components: [new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent('已取消发布。'))], flags: [MessageFlags.IsComponentsV2] });
         }
 
         // 发布
         if (action === 'wiz_submit') {
-            if (!state.file_url) {
-                return await interaction.reply({ content: '❌ 必须先添加作品附件！', flags: [64] });
+            if (!state.files) {
+                return await interaction.reply({ components: [new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent('❌ 必须先添加作品附件！'))], flags: [MessageFlags.Ephemeral, MessageFlags.IsComponentsV2] });
             }
 
             await interaction.deferUpdate();
@@ -336,14 +374,13 @@ class UploadWizardHandler {
 
                 wizardStates.delete(stateId);
                 await interaction.editReply({
-                    content: `✅ 作品已成功发布！\n文件ID: \`${fileId}\``,
-                    embeds: [],
-                    components: []
+                    components: [new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(`✅ 作品已成功发布！\n文件ID: \`${fileId}\``))],
+                    flags: [MessageFlags.IsComponentsV2]
                 });
 
             } catch (err) {
                 console.error('[UploadWizard] 发布错误:', err);
-                await interaction.followUp({ content: '❌ 保存时发生数据库错误。', flags: [64] });
+                await interaction.followUp({ components: [new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent('❌ 保存时发生数据库错误。'))], flags: [MessageFlags.Ephemeral, MessageFlags.IsComponentsV2] });
             }
             return;
         }
@@ -363,7 +400,7 @@ class UploadWizardHandler {
 
         const state = wizardStates.get(stateId);
         if (!state) {
-            return await interaction.reply({ content: '❌ 该面板已失效，请重新使用命令。', flags: [64] });
+            return await interaction.reply({ components: [new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent('❌ 该面板已失效，请重新使用命令。'))], flags: [MessageFlags.Ephemeral, MessageFlags.IsComponentsV2] });
         }
 
         if (action === 'wiz_modal_captcha') {
