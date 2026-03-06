@@ -101,32 +101,65 @@ class ForumPanelHandler {
      * 将作者私有面板转换为公开的"作品发布处"（用户可下载）
      */
     async convertToPublicPanel(context, fileRecord) {
-        let conditionText = '无限制：可直接获取';
-        if (fileRecord.req_reaction) conditionText = '点赞：对帖子首楼点赞（任意反应）后获取';
-        if (fileRecord.req_captcha || fileRecord.req_terms) conditionText = '验证：需完成验证码或确认声明';
+        const conditionBold = fileRecord.req_reply ? '点赞并评论' : (fileRecord.req_reaction ? '点赞' : '无限制');
+        const captchaText = fileRecord.req_captcha || fileRecord.captcha_text ? `\n> **提取码**: 寻找作者在贴内贴出的提取码` : '';
 
         const embed = new EmbedBuilder()
-            .setTitle('🎈 作品发布处')
+            .setTitle('📍 作品发布处')
             .setDescription(
-                `请在此处交互获取本帖作品，或直接使用 \`/获取作品\` 命令。\n\n` +
-                `*   **前置条件**: ${fileRecord.req_reaction ? '**点赞**' : '**无限制**'}\n` +
-                `    *   ${conditionText}\n` +
-                `*   **每日下载上限**: ${config.get('bot_config.file_share.daily_download_limit', 75)} 次\n\n` +
-                `> 如点击按钮后未出现文件消息，可尝试滑到最下方后使用 \`/获取作品\` 命令`
+                `请在此处交互获取本帖作品\n` +
+                `或者直接发送 **/获取作品** 来使用命令获取本帖内最新的发布处的作品\n\n` +
+                `**• 前置条件: ${conditionBold}**\n` +
+                `> **无限制**: 可直接获取\n` +
+                `> **点赞**: 对帖子首楼点赞(任意反应)或在贴内回复(任意回复)\n` +
+                `> **点赞并评论**: 对帖子首楼点赞(任意反应)且在贴内回复(任意回复)` + captchaText + `\n\n` +
+                `**• 分享模式: 开放分享**\n` +
+                `> **每日限定**: 用户的每日获取作品次数耗尽后**无法获取本作品**\n` +
+                `> **开放分享**: 用户的每日获取作品次数耗尽后**仍可获取本作品**\n\n` +
+                `**Tips:**\n` +
+                `> 如果出现了点击按钮后再滑到最下面发现没有作品消息\n` +
+                `> 可以滑到最下面后输入 **/获取作品** 来使用命令获取最新发布处的作品\n\n` +
+                `**───────────────**\n` +
+                `**作者专属交互**`
             )
             .setColor(0x2B2D31)
-            .setFooter({ text: `文件ID: ${fileRecord.id}` });
+            .setFooter({ text: `| 作品ID: ${fileRecord.id}` });
 
         const row1 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId(`fp_remove_panel:${fileRecord.uploader_id}`).setLabel('移除本条发布处').setEmoji('⚠️').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId(`fp_republish:${fileRecord.uploader_id}`).setLabel('放置新的发布处').setEmoji('🆕').setStyle(ButtonStyle.Success)
+            new ButtonBuilder().setCustomId(`fp_republish:${fileRecord.uploader_id}`).setLabel('放置新的作品发布处').setEmoji('🆕').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId(`fp_pin_panel:${fileRecord.uploader_id}`).setLabel('标注/取消标注本消息').setEmoji('📌').setStyle(ButtonStyle.Primary)
         );
 
         const row2 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId(`fp_get_work:${fileRecord.id}`).setLabel('获取作品').setEmoji('🎁').setStyle(ButtonStyle.Primary)
         );
 
-        await context.message.edit({ content: '', embeds: [embed], components: [row1, row2] });
+        const embeds = [embed];
+
+        let fileUrls = [{ url: fileRecord.file_url, name: fileRecord.file_name?.split(', ')[0] || '' }];
+        if (fileRecord.extra_files) {
+            try {
+                const extras = JSON.parse(fileRecord.extra_files);
+                fileUrls = fileUrls.concat(extras);
+            } catch (e) { }
+        }
+
+        let firstImageSet = false;
+        for (const file of fileUrls) {
+            if (file.name && file.name.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
+                if (!firstImageSet) {
+                    embed.setImage(file.url);
+                    firstImageSet = true;
+                } else {
+                    const extraEmbed = new EmbedBuilder().setImage(file.url).setColor(0x2B2D31);
+                    embeds.push(extraEmbed);
+                    if (embeds.length >= 10) break;
+                }
+            }
+        }
+
+        await context.message.edit({ content: '', embeds: embeds, components: [row1, row2] });
     }
 }
 

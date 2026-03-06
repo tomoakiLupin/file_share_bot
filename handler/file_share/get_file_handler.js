@@ -30,33 +30,65 @@ class GetFileHandler {
                 return await interaction.editReply({ content: `❌ 您今天的下载次数已达上限 (${dailyLimit} 次)，请明天再来！` });
             }
 
-            // 3. 检查点赞条件
-            if (fileRecord.req_reaction) {
+            // 3. 检查点赞/评论条件
+            if (fileRecord.req_reaction || fileRecord.req_reply) {
                 let hasReacted = false;
+                let hasReplied = false;
+
+                // 点赞检查
                 try {
+                    let targetMsg = null;
                     if (interaction.channel?.isThread()) {
-                        const starterMsg = await interaction.channel.fetchStarterMessage().catch(() => null);
-                        if (starterMsg?.reactions?.cache.size > 0) {
-                            for (const reaction of starterMsg.reactions.cache.values()) {
-                                const users = await reaction.users.fetch().catch(() => null);
-                                if (users?.has(userId)) { hasReacted = true; break; }
-                            }
-                        }
+                        targetMsg = await interaction.channel.fetchStarterMessage({ force: true }).catch(() => null);
                     } else if (fileRecord.source_message_id) {
-                        const msg = await interaction.channel.messages.fetch(fileRecord.source_message_id).catch(() => null);
-                        if (msg?.reactions?.cache.size > 0) {
-                            for (const reaction of msg.reactions.cache.values()) {
-                                const users = await reaction.users.fetch().catch(() => null);
-                                if (users?.has(userId)) { hasReacted = true; break; }
-                            }
+                        targetMsg = await interaction.channel.messages.fetch(fileRecord.source_message_id).catch(() => null);
+                    }
+
+                    if (targetMsg?.reactions?.cache.size > 0) {
+                        for (const reaction of targetMsg.reactions.cache.values()) {
+                            // fetch() 会拉取最新点赞用户列表
+                            const users = await reaction.users.fetch().catch(() => null);
+                            if (users?.has(userId)) { hasReacted = true; break; }
                         }
                     }
                 } catch (e) {
                     console.error('[GetFileHandler] 检查点赞失败:', e);
                 }
 
-                if (!hasReacted) {
-                    return await interaction.editReply({ content: '⚠️ **下载被拒绝**\n发布者要求必须在原贴（首楼消息）点赞后才能下载附件。请点赞后再试！' });
+                // 回复检查
+                if (fileRecord.req_reply) {
+                    try {
+                        if (interaction.channel?.isThread()) {
+                            // Thread members API 不好判断是否删了评论，其实直接拉取用户在帖子里的最新消息比较稳
+                            // 拉取这个频道里该作者发过的消息：
+                            const msgs = await interaction.channel.messages.fetch({ limit: 100 }).catch(() => null);
+                            if (msgs) {
+                                // 找找看有没有非系统消息是这个用户发的
+                                const userReply = msgs.find(m => m.author.id === userId && !m.system);
+                                if (userReply) {
+                                    hasReplied = true;
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error('[GetFileHandler] 检查回复失败:', e);
+                    }
+                }
+
+                if (fileRecord.req_reply) {
+                    // 需要点赞且评论
+                    if (!hasReacted && !hasReplied) {
+                        return await interaction.editReply({ content: `⚠️ **下载被拒绝**\n发布者要求必须在**原贴首楼点赞**（任意反应）并且**进行评论**后才能下载附件。\n\n❌ 您当前**未点赞首楼**。\n❌ 您当前**未发表评论**。` });
+                    } else if (!hasReacted) {
+                        return await interaction.editReply({ content: `⚠️ **下载被拒绝**\n发布者要求必须在**原贴首楼点赞**（任意反应）并且**进行评论**后才能下载附件。\n\n❌ 您当前**未点赞首楼**。\n✅ 您已发表评论。` });
+                    } else if (!hasReplied) {
+                        return await interaction.editReply({ content: `⚠️ **下载被拒绝**\n发布者要求必须在**原贴首楼点赞**（任意反应）并且**进行评论**后才能下载附件。\n\n✅ 您已点赞首楼。\n❌ 您当前**未发表评论**。` });
+                    }
+                } else if (fileRecord.req_reaction) {
+                    // 只需要点赞
+                    if (!hasReacted) {
+                        return await interaction.editReply({ content: '⚠️ **下载被拒绝**\n发布者要求必须在**原贴首楼点赞**（任意反应）后才能下载附件。请点赞后再试！' });
+                    }
                 }
             }
 
@@ -90,17 +122,16 @@ class GetFileHandler {
     }
 
     async doCaptchaStep(interaction, fileRecord) {
-        const label = fileRecord.captcha_text ? '输入提取口令' : '进行人机验证';
-        const num1 = Math.floor(Math.random() * 10) + 1;
-        const num2 = Math.floor(Math.random() * 10) + 1;
-        const expectedAnswer = (num1 + num2).toString();
+        if (!fileRecord.captcha_text) return true; // 安全回退
+
+        const expectedAnswer = fileRecord.captcha_text;
 
         const msg = await interaction.editReply({
-            content: `🔐 **第一步：验证**\n请点击下方按钮完成验证后继续。`,
+            content: `🔐 **获取作品需要口令**\n作者设置了额外的下载验证，请点击下方按钮输入提取口令后继续。`,
             embeds: [],
             components: [
                 new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('btn_captcha').setLabel(label).setStyle(ButtonStyle.Primary)
+                    new ButtonBuilder().setCustomId('btn_captcha').setLabel('输入提取口令').setStyle(ButtonStyle.Primary)
                 )
             ]
         });
@@ -118,12 +149,12 @@ class GetFileHandler {
 
                     const modal = new ModalBuilder()
                         .setCustomId('captcha_modal')
-                        .setTitle(fileRecord.captcha_text ? '作品获取口令' : '人机验证');
+                        .setTitle('获取作品口令');
                     modal.addComponents(
                         new ActionRowBuilder().addComponents(
                             new TextInputBuilder()
                                 .setCustomId('captcha_input')
-                                .setLabel(fileRecord.captcha_text ? '请输入该作品的提取口令' : `请计算 ${num1} + ${num2} 的结果`)
+                                .setLabel('请输入该作品的提取口令')
                                 .setStyle(TextInputStyle.Short)
                                 .setRequired(true)
                         )
@@ -135,14 +166,14 @@ class GetFileHandler {
                             time: 60000,
                             filter: s => s.user.id === interaction.user.id
                         });
-                        const expected = fileRecord.captcha_text || expectedAnswer;
                         const userInput = submitted.fields.getTextInputValue('captcha_input').trim();
 
-                        if (userInput === expected) {
-                            await submitted.reply({ content: '✅ 验证通过！', flags: [64] });
+                        if (userInput === expectedAnswer) {
+                            // 使用 update 而不是 reply 来替换模态框原貌，或者如果需要展示后续按钮，可以保持在单条消息
+                            await submitted.update({ content: '✅ 口令正确，正在继续...', components: [] });
                             collector.stop('passed');
                         } else {
-                            await submitted.reply({ content: '❌ 错误，请重新尝试。', flags: [64] });
+                            await submitted.reply({ content: '❌ 口令错误，请重新获取。', flags: [64] });
                         }
                     } catch (e) { /* 超时，不处理 */ }
                 } catch (err) {
@@ -218,11 +249,13 @@ class GetFileHandler {
             }
 
             const fileCount = attachments.length;
-            await interaction.followUp({
+            // 覆盖当前的交互回复，这样文件和初始按钮就在同一条单独可见的消息里了
+            await interaction.editReply({
                 content: `✅ 文件加载成功！\n文件ID: \`${fileRecord.id}\`\n共 **${fileCount}** 个文件`,
                 files: attachments,
-                flags: [64]
-            }).catch(err => console.error('[GetFileHandler] followUp failed:', err));
+                embeds: [],
+                components: []
+            }).catch(err => console.error('[GetFileHandler] editReply failed:', err));
 
             sendLog(interaction.client, 'info', {
                 module: '文件分享',

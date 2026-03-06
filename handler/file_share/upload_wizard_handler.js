@@ -60,7 +60,7 @@ class UploadWizardHandler {
         const state = wizardStates.get(stateId);
         if (!state) return { content: '❌ 会话已过期，请重新使用命令。', components: [] };
 
-        const modeLabel = state.mode === 0 ? '无限制' : (state.mode === 1 ? '点赞' : '点赞或回复');
+        const modeLabel = state.mode === 0 ? '无限制' : (state.mode === 1 ? '点赞' : '点赞并评论');
 
         const embed = new EmbedBuilder()
             .setTitle('📦 作品发布面板')
@@ -68,20 +68,40 @@ class UploadWizardHandler {
             .setDescription(
                 `**获取作品需求**\n当前模式: **${modeLabel}**\n\n` +
                 `**提取码**\n` +
-                `可设置下载密码，需要用户输入正确口令才能获取。\n` +
-                `⚠️ 开头/结尾的空格将被自动清理\n\n` +
+                `点击按钮切换是否启用来和上方的需求进行组合(无限制+启用提取码为纯提取码模式)\n` +
+                `📍 记得将提取码置于贴内\n` +
+                `⚠️ 开头或结尾的空格将被自动清理\n\n` +
                 `**获取次数设置**\n` +
-                `当日下载次数耗尽时是否仍可获取本作品？\n` +
-                `当前设置: ${state.daily_limit ? '**每日限定**：耗尽后不可获取' : '**开放分享**：耗尽后仍可获取'}\n\n` +
+                `可以设置当用户的当日获取作品次数耗尽时，是否依然允许其获取本作品？\n` +
+                `当前设置: **${state.daily_limit ? '每日限定' : '开放分享'}**: ${state.daily_limit ? '用户的每日获取作品次数耗尽后无法获取本作品' : '用户的每日获取作品次数耗尽后仍可获取本作品'}\n\n` +
                 `**作者声明**\n` +
                 `当前状态: **${state.terms_enabled ? '已启用' : '已关闭'}**\n` +
-                `> 下载前将先展示声明，要求用户二次确认\n\n` +
-                `**当前声明内容:**\n${state.terms_content ?? '已禁用'}\n\n` +
-                `**当前附件:**\n${state.file_name ? `✅ 已添加: **${state.file_name}**` : '❌ 未添加'}`
-            )
-            .setFooter({ text: '所有设置配置完成后，点击"发布"将文件公开。' });
+                `> 在用户下载作品前将先展示声明内容提示一遍用户，要求用户二次确认声明内容\n\n` +
+                `**当前声明内容:**\n` +
+                `\`\`\`\n${state.terms_content || '已禁用'}\n\`\`\`\n` +
+                `**─────────────────**\n` +
+                `**当前附件:** ${state.file_name ? `✅ 已添加: **${state.file_name}**` : '❌ 未添加'}\n\n` +
+                `*如使用中有任何问题或建议请前往反馈频道*`
+            );
 
-        if (state.file_url && state.file_content_type?.startsWith('image/')) {
+        const embeds = [embed];
+
+        if (state.files && state.files.length > 0) {
+            let firstImageSet = false;
+            for (const file of state.files) {
+                const isImage = file.contentType ? file.contentType.startsWith('image/') : !!file.name.match(/\.(png|jpg|jpeg|gif|webp)$/i);
+                if (isImage) {
+                    if (!firstImageSet) {
+                        embed.setImage(file.url);
+                        firstImageSet = true;
+                    } else {
+                        const extraEmbed = new EmbedBuilder().setImage(file.url).setColor(0x2f3136);
+                        embeds.push(extraEmbed);
+                        if (embeds.length >= 10) break;
+                    }
+                }
+            }
+        } else if (state.file_url && state.file_content_type?.startsWith('image/')) {
             embed.setImage(state.file_url);
         }
 
@@ -89,15 +109,15 @@ class UploadWizardHandler {
         const row1 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId(`wiz_mode_0:${stateId}`).setLabel('☀️ 无限制').setStyle(state.mode === 0 ? ButtonStyle.Success : ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId(`wiz_mode_1:${stateId}`).setLabel('❤️ 点赞').setStyle(state.mode === 1 ? ButtonStyle.Danger : ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`wiz_mode_2:${stateId}`).setLabel('🎁 点赞或回复').setStyle(state.mode === 2 ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId(`wiz_mode_2:${stateId}`).setLabel('🎁 点赞并评论').setStyle(state.mode === 2 ? ButtonStyle.Primary : ButtonStyle.Secondary)
         );
 
         // Row 2: 提取码 & 次数限制
         const row2 = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`wiz_captcha:${stateId}`)
-                .setLabel(state.captcha !== null ? `# 提取码: ${state.captcha}` : '# 提取码: 已关闭')
-                .setStyle(state.captcha !== null ? ButtonStyle.Success : ButtonStyle.Primary),
+                .setLabel(state.captcha !== null ? `# 提取码: 已开启 (${state.captcha})` : '# 提取码: 已关闭')
+                .setStyle(state.captcha !== null ? ButtonStyle.Primary : ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId(`wiz_limit_0:${stateId}`)
                 .setLabel('🎀 开放分享')
@@ -108,7 +128,7 @@ class UploadWizardHandler {
                 .setStyle(state.daily_limit ? ButtonStyle.Danger : ButtonStyle.Secondary)
         );
 
-        // Row 3: 作者声明
+        // Row 3: 声明
         const row3 = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`wiz_terms_on:${stateId}`)
@@ -125,12 +145,16 @@ class UploadWizardHandler {
                 .setDisabled(!state.terms_enabled)
         );
 
-        // Row 4: 文件操作
+        // Row 4: 附件
         const row4 = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`wiz_file:${stateId}`)
-                .setLabel(state.file_name ? '🔁 更改作品' : '➕ 添加作品')
-                .setStyle(ButtonStyle.Primary),
+                .setLabel(state.file_name ? '➕ 添加作品' : '➕ 添加作品')
+                .setStyle(ButtonStyle.Primary)
+        );
+
+        // Row 5: 提交和取消
+        const row5 = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`wiz_submit:${stateId}`)
                 .setLabel('📩 发布')
@@ -142,7 +166,7 @@ class UploadWizardHandler {
                 .setStyle(ButtonStyle.Danger)
         );
 
-        return { content: '', embeds: [embed], components: [row1, row2, row3, row4] };
+        return { content: '', embeds: embeds, components: [row1, row2, row3, row4, row5] };
     }
 
     async handleButton(interaction) {
@@ -151,6 +175,15 @@ class UploadWizardHandler {
 
         // 启动向导
         if (customId === 'wiz_start') {
+            if (interaction.channel?.isThread()) {
+                if (
+                    interaction.user.id !== interaction.channel.ownerId &&
+                    !interaction.member?.permissions.has('Administrator')
+                ) {
+                    await interaction.reply({ content: '❌ 权限不足：只有本帖的发布者（楼主）才能在此发布作品。', flags: [64] });
+                    return true;
+                }
+            }
             await this.startWizard(interaction);
             return true;
         }
@@ -287,6 +320,7 @@ class UploadWizardHandler {
                     upload_time: new Date().toISOString(),
                     source_message_id: sourceMessageId,
                     req_reaction: state.mode > 0,
+                    req_reply: state.mode === 2,
                     req_captcha: state.captcha !== null,
                     req_terms: state.terms_enabled,
                     captcha_text: state.captcha,

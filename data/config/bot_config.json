@@ -2,7 +2,7 @@
     "main_config": {
         "safety_setting": {
             "command_push_guildids": [
-                "YOUR_GUILD_ID_HERE"
+                "289576090983202816"
             ],
             "developers_userid": [
                 "YOUR_DEVELOPER_USER_ID"
@@ -15,7 +15,7 @@
     },
     "file_share": {
         "forum_channel_ids": [
-            "YOUR_FORUM_CHANNEL_ID_HERE"
+            "1478251243703894028"
         ],
         "daily_download_limit": 75
     },

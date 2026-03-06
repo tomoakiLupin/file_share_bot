@@ -129,6 +129,27 @@ class ForumCommandsHandler {
             return;
         }
 
+        // 【标注/取消标注本消息】
+        if (customId.startsWith('fp_pin_panel:')) {
+            const uploaderId = customId.split(':')[1];
+            if (interaction.user.id !== uploaderId && !interaction.member.permissions.has('Administrator')) {
+                return await interaction.reply({ content: '❌ 只有该帖子的作者可以标注或取消标注作品发布处。', flags: [64] });
+            }
+            try {
+                if (interaction.message.pinned) {
+                    await interaction.message.unpin();
+                    await interaction.reply({ content: '✅ 已取消标注本条发布处。', flags: [64] });
+                } else {
+                    await interaction.message.pin();
+                    await interaction.reply({ content: '✅ 已将本条发布处标注（Pin），用户可在频道顶端的图钉处快速找到它。', flags: [64] });
+                }
+            } catch (err) {
+                console.error('Pin/Unpin error:', err);
+                await interaction.reply({ content: '❌ 无法标注或取消标注消息。可能是缺少权限（管理消息）。', flags: [64] });
+            }
+            return;
+        }
+
         // 【获取作品】
         if (customId.startsWith('fp_get_work:')) {
             const fileId = customId.split(':')[1];

@@ -37,7 +37,8 @@ class SharedFilesDB {
                                 req_terms INTEGER DEFAULT 0,
                                 captcha_text TEXT,
                                 extra_files TEXT,
-                                terms_content TEXT
+                                terms_content TEXT,
+                                req_reply INTEGER DEFAULT 0
                             )
                         `);
 
@@ -45,6 +46,7 @@ class SharedFilesDB {
                         this.db.run(`ALTER TABLE shared_files ADD COLUMN captcha_text TEXT`, () => { });
                         this.db.run(`ALTER TABLE shared_files ADD COLUMN extra_files TEXT`, () => { });
                         this.db.run(`ALTER TABLE shared_files ADD COLUMN terms_content TEXT`, () => { });
+                        this.db.run(`ALTER TABLE shared_files ADD COLUMN req_reply INTEGER DEFAULT 0`, () => { });
 
                         this.db.run(`
                             CREATE TABLE IF NOT EXISTS user_downloads (
@@ -76,8 +78,8 @@ class SharedFilesDB {
         return new Promise((resolve, reject) => {
             const stmt = this.db.prepare(`
                 INSERT INTO shared_files 
-                (id, uploader_id, file_name, file_url, upload_time, source_message_id, req_reaction, req_captcha, req_terms, captcha_text, extra_files, terms_content) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, uploader_id, file_name, file_url, upload_time, source_message_id, req_reaction, req_captcha, req_terms, captcha_text, extra_files, terms_content, req_reply) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
             stmt.run(
                 data.id,
@@ -92,6 +94,7 @@ class SharedFilesDB {
                 data.captcha_text || null,
                 data.extra_files ? JSON.stringify(data.extra_files) : null,
                 data.terms_content || null,
+                data.req_reply ? 1 : 0,
                 (err) => {
                     if (err) reject(err);
                     else resolve(true);
