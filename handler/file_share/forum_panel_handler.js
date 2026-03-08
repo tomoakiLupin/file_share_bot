@@ -76,9 +76,9 @@ class ForumPanelHandler {
      */
     async sendAuthorPanel(thread_or_interaction, ownerId, editMessage = null) {
         const embed = new EmbedBuilder()
-            .setAuthor({ name: '作品发布', iconURL: 'https://cdn.discordapp.com/emojis/1126157404415869069.webp?size=96&quality=lossless' }) // Adjust icon to match bot/app icon
+            .setAuthor({ name: '📄 作品发布' })
             .setColor(0x00b0f4) // A nice bright color, like the user's screenshot had a green/blue stripe
-            .setDescription(`📄 **作品发布**\n\n本 BOT 为反自动化爬虫脚本的防盗措施，提供交互性作品发布功能\n作者可选择通过本BOT发布作品，用户通过交互性按钮获取作品进行下载\n如果选择不使用本BOT，也建议首楼尽量放置图片，贴内放置作品，以避免简易爬虫批量盗取首楼作品\n\n**作者可选获取作品方式:**\n\n- 无限制: 用户通过点击按钮即可下载作品. 无任何限制\n- 点赞: 用户对首楼进行反应后可下载作品\n- 点赞或评论: 用户对首楼进行反应或发送回复后可下载作品\n- 提取码: 作者在楼内布置提取码. 用户输入提取码后可下载作品\n\n- 注: Bot 会缓存作品文件，由于需要实现在贴内隐藏作品的情况下 Bot 向用户发送作品，Bot 需要先实现缓存作品相关文件才能实现再向用户发送，并且缓存会在删除发布处时同步删除，无法找回。\n- 如使用中有任何问题请前往: 反馈频道`);
+            .setDescription(`本 BOT 为反自动化爬虫脚本的防盗措施，提供交互性作品发布功能\n作者可选择通过本BOT发布作品，用户通过交互性按钮获取作品进行下载\n如果选择不使用本BOT，也建议首楼尽量放置图片，贴内放置作品，以避免简易爬虫批量盗取首楼作品\n\n**作者可选获取作品方式:**\n\n- 无限制: 用户通过点击按钮即可下载作品. 无任何限制\n- 点赞: 用户对首楼进行反应后可下载作品\n- 点赞或评论: 用户对首楼进行反应或发送回复后可下载作品\n- 提取码: 作者在楼内布置提取码. 用户输入提取码后可下载作品\n\n- 注: Bot 会缓存作品文件，由于需要实现在贴内隐藏作品的情况下 Bot 向用户发送作品，Bot 需要先实现缓存作品相关文件才能实现再向用户发送，并且缓存会在删除发布处时同步删除，无法找回。\n- 如使用中有任何问题请前往: 反馈频道`);
 
         const actionRow1 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId(`fp_remove_panel:${ownerId}`).setLabel('⚠️ 从贴内移除本条消息').setStyle(ButtonStyle.Danger)
@@ -87,7 +87,7 @@ class ForumPanelHandler {
             new ButtonBuilder().setCustomId(`fp_disable_prompt:${ownerId}`).setLabel('🔕 之后将不再在您的帖子内自动弹出本消息').setStyle(ButtonStyle.Danger)
         );
         const actionRow3 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('wiz_start').setLabel('📝 打开发布作品交互面板').setStyle(ButtonStyle.Success)
+            new ButtonBuilder().setCustomId('wiz_start').setLabel('� 打开发布作品交互面板').setStyle(ButtonStyle.Success)
         );
 
         const payload = {
@@ -139,7 +139,7 @@ class ForumPanelHandler {
 
         container.addActionRowComponents(
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`fp_remove_panel:${fileRecord.uploader_id}`).setLabel('⚠️ 移除本条发布处').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId(`fp_delete_work:${fileRecord.id}`).setLabel('⚠️ 移除本条发布处并删除作品').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId(`fp_republish:${fileRecord.uploader_id}`).setLabel('🆕 放置新的作品发布处').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`fp_pin_panel:${fileRecord.uploader_id}`).setLabel('📌 标注/取消标注本消息').setStyle(ButtonStyle.Primary)
             ),

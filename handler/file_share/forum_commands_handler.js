@@ -10,7 +10,7 @@ class ForumCommandsHandler {
     // ========== SLASH COMMAND EXECUTORS ==========
 
     /** /发布作品 */
-    async execute发布作品(interaction) {
+    async executeaaa发布作品(interaction) {
         const authError = await forumPanelHandler.checkEligibility(interaction);
         if (authError) return await forumPanelHandler.sendAuthFailed(interaction, authError);
 
@@ -29,21 +29,21 @@ class ForumCommandsHandler {
     }
 
     /** /关闭自动提示 */
-    async execute关闭自动提示(interaction) {
+    async executeaaa关闭自动提示(interaction) {
         await interaction.deferReply({ flags: [64] });
         await this.db.setUserPreference(interaction.user.id, true);
         await interaction.editReply({ content: '✅ 已关闭发帖时的自动提示。您仍可使用 `/发布作品` 手动呼出面板。' });
     }
 
     /** /启用自动提示 */
-    async execute启用自动提示(interaction) {
+    async executeaaa启用自动提示(interaction) {
         await interaction.deferReply({ flags: [64] });
         await this.db.setUserPreference(interaction.user.id, false);
         await interaction.editReply({ content: '✅ 已启用发帖时的自动提示。' });
     }
 
     /** /获取作品（获取当前帖子最新文件） */
-    async execute获取作品(interaction) {
+    async executeaaa获取作品(interaction) {
         const authError = await forumPanelHandler.checkEligibility(interaction);
         if (authError) return await forumPanelHandler.sendAuthFailed(interaction, authError);
 
@@ -63,7 +63,7 @@ class ForumCommandsHandler {
     }
 
     /** /移除作品 */
-    async execute移除作品(interaction) {
+    async executeaaa移除作品(interaction) {
         await interaction.deferReply({ flags: [64] });
 
         const fileId = interaction.options.getString('file_id').trim();
@@ -94,16 +94,74 @@ class ForumCommandsHandler {
 
     // ========== BUTTON HANDLERS ==========
 
-    async handleButton(interaction) {
+    handleButton = async (interaction) => {
         const customId = interaction.customId;
 
-        // 【移除消息】
+        // 【移除消息 (仅用于自动提示面板的单纯移除)】
         if (customId.startsWith('fp_remove_panel:')) {
             const uploaderId = customId.split(':')[1];
             if (interaction.user.id !== uploaderId && !interaction.member.permissions.has('Administrator')) {
                 return await interaction.reply({ content: '❌ 只有发布者或管理员可以移除此面板。', flags: [64] });
             }
             await interaction.message.delete();
+            return;
+        }
+
+        // 【删除作品及面板确认弹窗】
+        if (customId.startsWith('fp_delete_work:')) {
+            const fileId = customId.split(':')[1];
+            const fileRecord = await this.db.getFileRecord(fileId);
+            if (!fileRecord) {
+                return await interaction.reply({ content: '❌ 该作品已被删除或不存在。', flags: [64] });
+            }
+            if (interaction.user.id !== fileRecord.uploader_id && !interaction.member.permissions.has('Administrator')) {
+                return await interaction.reply({ content: '❌ 只有发布者或管理员可以删除此作品。', flags: [64] });
+            }
+
+            const confirmRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`fp_confirm_del:${fileId}:${interaction.message.id}`).setLabel('✅ 确认永久删除').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId('fp_cancel_del').setLabel('取消').setStyle(ButtonStyle.Secondary)
+            );
+
+            return await interaction.reply({
+                content: `⚠️ **删除确认**\n\n点击确认后，将永久从数据库中删除作品 ID: \`${fileId}\`（**${fileRecord.file_name}**）。\n\n其他用户将**无法再提取**此作品，相应的面板也会一并移除，且该操作**不可逆转**！也可以在此取消，下次通过斜杠命令“移除作品”来删除。\n\n请确认是否彻底删除？`,
+                components: [confirmRow],
+                flags: [64] // 仅自己可见
+            });
+        }
+
+        // 【取消删除】
+        if (customId === 'fp_cancel_del') {
+            return await interaction.update({ content: '✅ 已取消删除操作。', embeds: [], components: [] });
+        }
+
+        // 【确认删除作品】
+        if (customId.startsWith('fp_confirm_del:')) {
+            const parts = customId.split(':');
+            const fileId = parts[1];
+            const panelMsgId = parts[2];
+
+            const fileRecord = await this.db.getFileRecord(fileId);
+            if (!fileRecord) {
+                return await interaction.update({ content: '❌ 该作品已被删除或不存在。', components: [] });
+            }
+            if (interaction.user.id !== fileRecord.uploader_id && !interaction.member.permissions.has('Administrator')) {
+                return await interaction.reply({ content: '❌ 权限不足。', flags: [64] });
+            }
+
+            const isDeleted = await this.db.deleteFileRecord(fileId, fileRecord.uploader_id, interaction.member.permissions.has('Administrator'));
+            if (isDeleted) {
+                await interaction.update({ content: `✅ 成功删除了作品 ID: \`${fileId}\` 并移除了分享面板。`, components: [] });
+                // 尝试删除原本的公开面板消息
+                try {
+                    const originalMsg = await interaction.channel.messages.fetch(panelMsgId);
+                    if (originalMsg) await originalMsg.delete();
+                } catch (e) {
+                    console.error('[ForumCommandsHandler] 删除发布的面板消息失败 (可能已被手动删除):', e.message);
+                }
+            } else {
+                await interaction.update({ content: `❌ 删除作品失败，该作品可能已经不存在。`, components: [] });
+            }
             return;
         }
 
@@ -180,7 +238,7 @@ class ForumCommandsHandler {
     }
 
     /** /查询作品 */
-    async execute查询作品(interaction) {
+    async executeaaa查询作品(interaction) {
         await interaction.deferReply({ flags: [64] }); // 只有自己可见
         
         try {
@@ -261,7 +319,7 @@ class ForumCommandsHandler {
     }
 
     /** /查询用户 */
-    async execute查询用户(interaction) {
+    async executeaaa查询用户(interaction) {
         await interaction.deferReply({ flags: [64] }); // 只有自己可见
         
         try {
@@ -374,7 +432,7 @@ class ForumCommandsHandler {
 const instance = new ForumCommandsHandler();
 
 // 为 CommandRegistry 注册多个命令名 → 同一个 handler
-const commandNames = ['发布作品', '关闭自动提示', '启用自动提示', '获取作品', '查询作品', '查询用户', '移除作品'];
+const commandNames = ['aaa发布作品', 'aaa关闭自动提示', 'aaa启用自动提示', 'aaa获取作品', 'aaa查询作品', 'aaa查询用户', 'aaa移除作品'];
 module.exports = instance;
 
 // 导出各命令的独立 handler 对象供 command_registry 使用

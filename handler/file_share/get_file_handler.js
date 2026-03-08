@@ -5,7 +5,6 @@ const { sendLog } = require('../../utils/logger');
 
 class GetFileHandler {
     constructor() {
-        this.commandName = '获取文件';
         this.db = getDbInstance();
         this.requiredPermission = 0; // 所有人可用
     }

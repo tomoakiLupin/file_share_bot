@@ -1,7 +1,7 @@
 const forumCommandsHandler = require('./forum_commands_handler');
 
 module.exports = {
-    commandName: '查询作品',
+    commandName: 'aaa查询作品',
     requiredPermission: 0,
-    execute: (interaction) => forumCommandsHandler.execute查询作品(interaction)
+    execute: (interaction) => forumCommandsHandler.executeaaa查询作品(interaction)
 };
