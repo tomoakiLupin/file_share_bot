@@ -399,6 +399,8 @@ class ForumCommandsHandler {
 
             // 2. 获取统计数据
             const stats = await this.db.getUserDownloadStats(targetUser.id);
+            const dailyCount = await this.db.getUserDailyDownloadStats(targetUser.id);
+            const monthlyCount = await this.db.getUserMonthlyDownloadStats(targetUser.id);
             
             // 3. 构建 Embed
             const { EmbedBuilder } = require('discord.js');
@@ -409,13 +411,18 @@ class ForumCommandsHandler {
                 .addFields(
                     { name: '查询用户', value: `<@${targetUser.id}>`, inline: true },
                     { name: '用户 ID', value: `\`${targetUser.id}\``, inline: true },
-                    { name: '历史总下载量', value: `**${stats.totalDownloads}** 次`, inline: false }
+                    { name: '今日获取次数', value: `**${dailyCount}** 次`, inline: true },
+                    { name: '本月获取次数', value: `**${monthlyCount}** 次`, inline: true },
+                    { name: '历史总获取量', value: `**${stats.totalDownloads}** 次`, inline: true }
                 );
                 
             let downloadLogsText = '';
             if (stats.recentLogs.length > 0) {
                 const logs = stats.recentLogs.slice(0, 15); // 只显示最近15条防止字数超限
-                downloadLogsText = logs.map((log, index) => `${index + 1}. 文件ID \`${log.file_id}\` - <t:${Math.floor(new Date(log.timestamp).getTime() / 1000)}:R>`).join('\n');
+                downloadLogsText = logs.map((log, index) => {
+                    const uploaderTag = log.uploader_id === targetUser.id ? ' `(作者本人)`' : '';
+                    return `${index + 1}. 文件ID \`${log.file_id}\`${uploaderTag} - <t:${Math.floor(new Date(log.timestamp).getTime() / 1000)}:R>`;
+                }).join('\n');
                 if (stats.recentLogs.length > 15) {
                     downloadLogsText += `\n*...等共 ${stats.totalDownloads} 条记录*`;
                 }

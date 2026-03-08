@@ -311,12 +311,46 @@ class SharedFilesDB {
         });
     }
 
+    async getUserDailyDownloadStats(userId) {
+        await this.initDB();
+        return new Promise((resolve, reject) => {
+            const today = new Date().toISOString().split('T')[0];
+            this.db.get(
+                `SELECT download_count FROM user_downloads WHERE user_id = ? AND download_date = ?`,
+                [userId, today],
+                (err, row) => {
+                    if (err) return reject(err);
+                    resolve(row ? row.download_count : 0);
+                }
+            );
+        });
+    }
+
+    async getUserMonthlyDownloadStats(userId) {
+        await this.initDB();
+        return new Promise((resolve, reject) => {
+            const currentMonthPrefix = new Date().toISOString().substring(0, 7); // yyyy-mm
+            this.db.get(
+                `SELECT SUM(download_count) as total_monthly FROM user_downloads WHERE user_id = ? AND download_date LIKE ?`,
+                [userId, `${currentMonthPrefix}%`],
+                (err, row) => {
+                    if (err) return reject(err);
+                    resolve(row && row.total_monthly ? row.total_monthly : 0);
+                }
+            );
+        });
+    }
+
     async getUserDownloadStats(userId) {
         await this.initDB();
         return new Promise((resolve, reject) => {
             // First get the latest 15 downloaded files by this user
             this.db.all(
-                `SELECT file_id, timestamp FROM file_downloads_log WHERE user_id = ? ORDER BY timestamp DESC LIMIT 15`,
+                `SELECT l.file_id, l.timestamp, f.uploader_id, f.file_name 
+                 FROM file_downloads_log l
+                 LEFT JOIN shared_files f ON l.file_id = f.id 
+                 WHERE l.user_id = ? 
+                 ORDER BY l.timestamp DESC LIMIT 15`,
                 [userId],
                 (err, logs) => {
                     if (err) return reject(err);

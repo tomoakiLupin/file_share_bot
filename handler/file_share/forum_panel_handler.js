@@ -87,7 +87,7 @@ class ForumPanelHandler {
             new ButtonBuilder().setCustomId(`fp_disable_prompt:${ownerId}`).setLabel('🔕 之后将不再在您的帖子内自动弹出本消息').setStyle(ButtonStyle.Danger)
         );
         const actionRow3 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('wiz_start').setLabel('� 打开发布作品交互面板').setStyle(ButtonStyle.Success)
+            new ButtonBuilder().setCustomId('wiz_start').setLabel('📤 打开发布作品交互面板').setStyle(ButtonStyle.Success)
         );
 
         const payload = {

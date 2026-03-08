@@ -22,17 +22,18 @@ class UploadWizardHandler {
         let initialCaptcha = null;
         let initialTerms = false;
 
+        let initialFiles = null;
+
         if (interaction.isCommand && interaction.isCommand()) {
             const attachment = interaction.options.getAttachment?.('file');
             if (attachment) {
                 initialFileUrl = attachment.url;
                 initialFileName = attachment.name;
+                initialFiles = [{ url: attachment.url, name: attachment.name }];
             }
-            if (interaction.options.getString?.('req_reaction') === 'true') initialMode = 1;
+            if (interaction.options.getBoolean?.('req_reaction') === true) initialMode = 1;
             const captchaText = interaction.options.getString?.('captcha_text');
-            if (captchaText?.trim().length > 0) initialCaptcha = captchaText.trim();
-            else if (interaction.options.getString?.('req_captcha') === 'true') initialCaptcha = '默认验证码';
-            if (interaction.options.getString?.('req_terms') === 'true') initialTerms = true;
+            if (captchaText && captchaText.trim().length > 0) initialCaptcha = captchaText.trim();
         }
 
         wizardStates.set(stateId, {
@@ -43,7 +44,7 @@ class UploadWizardHandler {
             terms_content: initialTerms ? '（请点击"输入声明"按钮修改内容）' : null,
             file_url: initialFileUrl,
             file_name: initialFileName,
-            files: null,
+            files: initialFiles,
             file_content_type: null,
         });
 
