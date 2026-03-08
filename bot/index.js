@@ -22,6 +22,13 @@ class Bot {
 
     setupInteractionHandlers() {
         this.client.on('interactionCreate', async (interaction) => {
+            // [测试开关] 记录所有的动作日志到本地文件
+            try {
+                require('../utils/test_activity_logger').logInteraction(interaction);
+            } catch (err) {
+                console.error('[Top-Level Event Router Logger Error]', err);
+            }
+
             if (await this.commandHandler.handleInteraction(interaction)) return;
             if (await this.buttonHandler.handleInteraction(interaction)) return;
             if (await this.modalSubmitHandler.handleInteraction(interaction)) return;

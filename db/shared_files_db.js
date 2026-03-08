@@ -296,6 +296,34 @@ class SharedFilesDB {
             );
         });
     }
+
+    async getUserDownloadStats(userId) {
+        await this.initDB();
+        return new Promise((resolve, reject) => {
+            // First get the latest 15 downloaded files by this user
+            this.db.all(
+                `SELECT file_id, timestamp FROM file_downloads_log WHERE user_id = ? ORDER BY timestamp DESC LIMIT 15`,
+                [userId],
+                (err, logs) => {
+                    if (err) return reject(err);
+                    
+                    // Then get total count across all time
+                    this.db.get(
+                        `SELECT COUNT(*) as total FROM file_downloads_log WHERE user_id = ?`,
+                        [userId],
+                        (errCount, countRow) => {
+                            if (errCount) return reject(errCount);
+                            
+                            resolve({
+                                totalDownloads: countRow.total,
+                                recentLogs: logs || []
+                            });
+                        }
+                    );
+                }
+            );
+        });
+    }
 }
 
 // 单例

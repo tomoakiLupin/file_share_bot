@@ -260,6 +260,62 @@ class ForumCommandsHandler {
         }
     }
 
+    /** /查询用户 */
+    async execute查询用户(interaction) {
+        await interaction.deferReply({ flags: [64] }); // 只有自己可见
+        
+        try {
+            const targetUser = interaction.options.getUser('user');
+            const executorId = interaction.user.id;
+            
+            // 1. 权限校验
+            const guild = interaction.guild;
+            const member = await guild.members.fetch(executorId).catch(() => null);
+            const isOwner = guild.ownerId === executorId;
+            const isAdmin = member?.permissions?.has('Administrator');
+            const hasFullAccess = isOwner || isAdmin;
+
+            // 如果不是管理员/服主，拒绝访问
+            if (!hasFullAccess) {
+                return await interaction.editReply({ content: '❌ 权限不足：只有服务器管理员或服主可以查询用户的下载统计信息。' });
+            }
+
+            // 2. 获取统计数据
+            const stats = await this.db.getUserDownloadStats(targetUser.id);
+            
+            // 3. 构建 Embed
+            const { EmbedBuilder } = require('discord.js');
+            const embed = new EmbedBuilder()
+                .setTitle('👤 用户下载记录查询')
+                .setColor(0x9b59b6)
+                .setThumbnail(targetUser.displayAvatarURL())
+                .addFields(
+                    { name: '查询用户', value: `<@${targetUser.id}>`, inline: true },
+                    { name: '用户 ID', value: `\`${targetUser.id}\``, inline: true },
+                    { name: '历史总下载量', value: `**${stats.totalDownloads}** 次`, inline: false }
+                );
+                
+            let downloadLogsText = '';
+            if (stats.recentLogs.length > 0) {
+                const logs = stats.recentLogs.slice(0, 15); // 只显示最近15条防止字数超限
+                downloadLogsText = logs.map((log, index) => `${index + 1}. 文件ID \`${log.file_id}\` - <t:${Math.floor(new Date(log.timestamp).getTime() / 1000)}:R>`).join('\n');
+                if (stats.recentLogs.length > 15) {
+                    downloadLogsText += `\n*...等共 ${stats.totalDownloads} 条记录*`;
+                }
+            } else {
+                downloadLogsText = '暂无下载记录。';
+            }
+            
+            embed.addFields({ name: '🔐 最近获取明细 (仅管理层可见)', value: downloadLogsText, inline: false });
+
+            await interaction.editReply({ embeds: [embed] });
+            
+        } catch (error) {
+            console.error('[ForumCommandsHandler] 查询用户出错:', error);
+            await interaction.editReply({ content: '❌ 查询时发生内部错误。' });
+        }
+    }
+
     // ========== MODAL HANDLERS ==========
 
     async handleModalSubmit(interaction) {
@@ -318,7 +374,7 @@ class ForumCommandsHandler {
 const instance = new ForumCommandsHandler();
 
 // 为 CommandRegistry 注册多个命令名 → 同一个 handler
-const commandNames = ['发布作品', '关闭自动提示', '启用自动提示', '获取作品', '查询作品', '移除作品'];
+const commandNames = ['发布作品', '关闭自动提示', '启用自动提示', '获取作品', '查询作品', '查询用户', '移除作品'];
 module.exports = instance;
 
 // 导出各命令的独立 handler 对象供 command_registry 使用
