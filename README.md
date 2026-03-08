@@ -43,7 +43,40 @@
 
 ---
 
-## 🛡️ 防护措施与安全设计
+## � 部署与初始化配置 (Setup Guide)
+
+如果你想把这个机器人部署到自己的服务器上，必须先为它配置好身份信息和所在的频道信息。
+
+### 步骤 1：获取 Bot Token
+
+1. 去 [Discord Developer Portal](https://discord.com/developers/applications) 新建一个应用 (Application)。
+2. 在左侧菜单点击 `Bot`，找到 `Reset Token` 并复制生成的那串密文（这是机器人的唯一通行证）。
+3. **⚠️ 极其重要**：在同一个 `Bot` 页面，往下拉找到 **Privileged Gateway Intents**，把三个开关都打开（特别是 `Message Content Intent` 和 `Server Members Intent`）。
+4. 在机器人代码的根目录下，新建一个文本文档，命名为 `.env`，然后在里面写入：
+   ```text
+   DISCORD_TOKEN=在此处粘贴你的Bot密文
+   ```
+
+### 步骤 2：开启开发者模式获取 ID
+
+在 Discord 客户端中，前往 **用户设置 (User Settings) > 高级设置 (Advanced)**，打开 **开发者模式 (Developer Mode)** 功能。只有打开这个，你才能复制频道和服务器的纯数字 ID。
+
+### 步骤 3：修改配置文件 `bot_config.json`
+
+打开 `data/config/bot_config.json` 文件进行绑定：
+
+1. **服务器 ID (Guild ID)**：右击你想让机器人进驻的服务器头像，选择 `复制服务器 ID`。
+   将其填入 `main_config.safety_setting.command_push_guildids` 这个数组里（斜杠命令只会在这个服务器生效）。
+2. **日志频道 ID (Log Channel)**：新建一个小黑屋文字频道，右击选择 `复制频道 ID`。
+   将其填入 `logger.log_channel_id` 中，机器人所有的启动成功、文件下载成功、错误排查信息都会在这里汇报。
+3. **论坛主版块 ID (Forum Channels)**：右击你想让机器人**自动提示是否发布面板的那个主论坛版块**（不是里面的一个个帖子），选择 `复制频道 ID`。
+   将其填入 `forum_rules.channels`。
+
+配置完成后，运行 `npm start`，如果日志频道出现了 `[bot] 所有模块初始化完成，机器人就绪！` 则代表配置成功拉起！
+
+---
+
+## �🛡️ 防护措施与安全设计
 
 为了防止服务器被滥用、被爬虫抓取，以及保护发布者的权益，本系统的核心设计包含了以下防护：
 
