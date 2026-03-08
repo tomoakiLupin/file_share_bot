@@ -317,6 +317,9 @@ class GetFileHandler {
                 components: []
             }).catch(err => console.error('[GetFileHandler] editReply failed:', err));
 
+            // Record the download event in the database for statistics
+            await this.db.recordDownload(fileRecord.id, interaction.user.id).catch(e => console.error('[GetFileHandler] 记录下载统计失败:', e));
+
             sendLog(interaction.client, 'info', {
                 module: '文件分享',
                 operation: '获取文件',

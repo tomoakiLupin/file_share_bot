@@ -62,6 +62,15 @@ class SharedFilesDB {
                         this.db.run(`ALTER TABLE user_downloads ADD COLUMN downloaded_files TEXT DEFAULT '[]'`, () => { });
 
                         this.db.run(`
+                            CREATE TABLE IF NOT EXISTS file_downloads_log (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                file_id TEXT,
+                                user_id TEXT,
+                                timestamp TEXT
+                            )
+                        `);
+
+                        this.db.run(`
                             CREATE TABLE IF NOT EXISTS user_preferences (
                                 user_id TEXT PRIMARY KEY,
                                 disable_auto_prompt INTEGER DEFAULT 0
@@ -237,8 +246,54 @@ class SharedFilesDB {
 
             this.db.run(sql, params, function (err) {
                 if (err) reject(err);
-                else resolve(this.changes > 0);
+                else {
+                    // Optional: Clean up logs if file is deleted
+                    // this.db.run(`DELETE FROM file_downloads_log WHERE file_id = ?`, [id], () => {});
+                    resolve(this.changes > 0);
+                }
             });
+        });
+    }
+
+    async recordDownload(fileId, userId) {
+        await this.initDB();
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                `INSERT INTO file_downloads_log (file_id, user_id, timestamp) VALUES (?, ?, ?)`,
+                [fileId, userId, new Date().toISOString()],
+                (err) => {
+                    if (err) reject(err);
+                    else resolve(true);
+                }
+            );
+        });
+    }
+
+    async getFileStats(fileId) {
+        await this.initDB();
+        return new Promise((resolve, reject) => {
+            // First get the latest 50 downloads
+            this.db.all(
+                `SELECT user_id, timestamp FROM file_downloads_log WHERE file_id = ? ORDER BY timestamp DESC LIMIT 50`,
+                [fileId],
+                (err, logs) => {
+                    if (err) return reject(err);
+                    
+                    // Then get total count
+                    this.db.get(
+                        `SELECT COUNT(*) as total FROM file_downloads_log WHERE file_id = ?`,
+                        [fileId],
+                        (errCount, countRow) => {
+                            if (errCount) return reject(errCount);
+                            
+                            resolve({
+                                totalDownloads: countRow.total,
+                                recentLogs: logs || []
+                            });
+                        }
+                    );
+                }
+            );
         });
     }
 }

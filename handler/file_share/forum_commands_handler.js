@@ -179,6 +179,87 @@ class ForumCommandsHandler {
         }
     }
 
+    /** /查询作品 */
+    async execute查询作品(interaction) {
+        await interaction.deferReply({ flags: [64] }); // 只有自己可见
+        
+        try {
+            const fileId = interaction.options.getString('file_id').trim();
+            const userId = interaction.user.id;
+            
+            // 1. 获取文件基础信息
+            const fileRecord = await this.db.getFileRecord(fileId);
+            if (!fileRecord) {
+                return await interaction.editReply({ content: '❌ 找不到指定的作品ID，可能有误或已被删除。' });
+            }
+
+            // 2. 权限校验
+            const guild = interaction.guild;
+            const member = await guild.members.fetch(userId).catch(() => null);
+            const isOwner = guild.ownerId === userId;
+            const isAdmin = member?.permissions?.has('Administrator');
+            const hasFullAccess = isOwner || isAdmin;
+            
+            const isUploader = fileRecord.uploader_id === userId;
+
+            // 如果既不是发布者也不是管理员/服主，拒绝访问
+            if (!hasFullAccess && !isUploader) {
+                return await interaction.editReply({ content: '❌ 权限不足：只有该作品的发布者、服务器管理员或服主可以查询下载统计信息。' });
+            }
+
+            // 3. 获取统计数据
+            const stats = await this.db.getFileStats(fileId);
+            
+            // 4. 构建 Embed
+            const { EmbedBuilder } = require('discord.js');
+            const embed = new EmbedBuilder()
+                .setTitle('📊 作品数据统计查询')
+                .setColor(0x3498db)
+                .addFields(
+                    { name: '作品 ID', value: `\`${fileId}\``, inline: true },
+                    { name: '发布者', value: `<@${fileRecord.uploader_id}>`, inline: true },
+                    { name: '发布时间', value: `<t:${Math.floor(new Date(fileRecord.upload_time).getTime() / 1000)}:F>`, inline: false },
+                    { name: '总下载/获取次数', value: `**${stats.totalDownloads}** 次`, inline: false }
+                );
+                
+            // 只有管理员/服主可以看到具体的下载人ID列表
+            if (hasFullAccess) {
+                let downloadLogsText = '';
+                if (stats.recentLogs.length > 0) {
+                    const logs = stats.recentLogs.slice(0, 15); // 只显示最近15条防止字数超限
+                    downloadLogsText = logs.map((log, index) => `${index + 1}. <@${log.user_id}> - <t:${Math.floor(new Date(log.timestamp).getTime() / 1000)}:R>`).join('\n');
+                    if (stats.recentLogs.length > 15) {
+                        downloadLogsText += `\n*...等共 ${stats.totalDownloads} 条记录*`;
+                    }
+                } else {
+                    downloadLogsText = '暂无下载记录。';
+                }
+                
+                embed.addFields({ name: '🔐 详细下载记录 (仅管理层可见)', value: downloadLogsText, inline: false });
+            } else if (isUploader) {
+                // 原作者只能看时间点，不知道具体是谁
+                let downloadLogsText = '';
+                if (stats.recentLogs.length > 0) {
+                    const logs = stats.recentLogs.slice(0, 5); // 随机展示最近5条的时间点
+                    downloadLogsText = logs.map((log, index) => `${index + 1}. 匿名用户 - <t:${Math.floor(new Date(log.timestamp).getTime() / 1000)}:R>`).join('\n');
+                    if (stats.recentLogs.length > 5) {
+                        downloadLogsText += `\n*...等共 ${stats.totalDownloads} 条记录*`;
+                    }
+                } else {
+                    downloadLogsText = '暂无下载记录。';
+                }
+                embed.addFields({ name: '最近下载动态', value: downloadLogsText, inline: false });
+                embed.setFooter({ text: '具体的用户ID记录仅服务器管理员及服主可见' });
+            }
+
+            await interaction.editReply({ embeds: [embed] });
+            
+        } catch (error) {
+            console.error('[ForumCommandsHandler] 查询作品出错:', error);
+            await interaction.editReply({ content: '❌ 查询时发生内部错误。' });
+        }
+    }
+
     // ========== MODAL HANDLERS ==========
 
     async handleModalSubmit(interaction) {
@@ -237,7 +318,7 @@ class ForumCommandsHandler {
 const instance = new ForumCommandsHandler();
 
 // 为 CommandRegistry 注册多个命令名 → 同一个 handler
-const commandNames = ['发布作品', '关闭自动提示', '启用自动提示', '获取作品', '移除作品'];
+const commandNames = ['发布作品', '关闭自动提示', '启用自动提示', '获取作品', '查询作品', '移除作品'];
 module.exports = instance;
 
 // 导出各命令的独立 handler 对象供 command_registry 使用
