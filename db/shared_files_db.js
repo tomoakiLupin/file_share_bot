@@ -219,6 +219,20 @@ class SharedFilesDB {
         });
     }
 
+    async getFilesBySourceMessage(sourceMessageId) {
+        await this.initDB();
+        return new Promise((resolve, reject) => {
+            this.db.all(
+                `SELECT * FROM shared_files WHERE source_message_id = ? ORDER BY upload_time ASC`,
+                [sourceMessageId],
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+    }
+
     async getNextFileId() {
         await this.initDB();
         return new Promise((resolve, reject) => {

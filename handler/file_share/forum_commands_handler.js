@@ -242,8 +242,74 @@ class ForumCommandsHandler {
         await interaction.deferReply({ flags: [64] }); // 只有自己可见
         
         try {
-            const fileId = interaction.options.getString('file_id').trim();
+            const fileId = interaction.options.getString('file_id')?.trim();
             const userId = interaction.user.id;
+            
+            // 权限校验准备
+            const guild = interaction.guild;
+            const member = await guild.members.fetch(userId).catch(() => null);
+            const isOwner = guild.ownerId === userId;
+            const isAdmin = member?.permissions?.has('Administrator');
+            const hasFullAccess = isOwner || isAdmin;
+
+            // ===== 仪表盘模式：未提供 fileId =====
+            if (!fileId) {
+                if (!interaction.channel?.isThread()) {
+                    return await interaction.editReply({ content: '❌ 请在具体的帖子内使用此命令，或提供要查询的作品 ID。' });
+                }
+
+                // 检查权限：只有该帖子的发布者或管理有权一键查询所有
+                if (interaction.channel.ownerId !== userId && !hasFullAccess) {
+                    return await interaction.editReply({ content: '❌ 权限不足：只有该帖子的发布者或管理员能一键查询帖内所有作品的统计数据。' });
+                }
+
+                const sourceMessageId = interaction.channel.id;
+                const files = await this.db.getFilesBySourceMessage(sourceMessageId);
+
+                if (!files || files.length === 0) {
+                    return await interaction.editReply({ content: '😅 在此帖子中未找到任何通过 Bot 发布的交互作品记录。' });
+                }
+
+                const { EmbedBuilder } = require('discord.js');
+                const embed = new EmbedBuilder()
+                    .setTitle('📊 帖子内作品数据统计面板')
+                    .setColor(0x3498db)
+                    .setDescription(`本贴内共找到 **${files.length}** 个发布作品。`);
+
+                // 遍历每个作品获取并拼接下载记录
+                for (const fileRecord of files) {
+                    const stats = await this.db.getFileStats(fileRecord.id);
+                    let infoText = `下载/获取: **${stats.totalDownloads}** 次\n`;
+                    
+                    if (stats.recentLogs.length > 0) {
+                        const logs = stats.recentLogs.slice(0, 3); // 每个作品默认展出最近3条动态
+                        if (hasFullAccess) {
+                            infoText += logs.map((log) => `> <@${log.user_id}> - <t:${Math.floor(new Date(log.timestamp).getTime() / 1000)}:R>`).join('\n');
+                        } else {
+                            infoText += logs.map((log) => `> 匿名用户 - <t:${Math.floor(new Date(log.timestamp).getTime() / 1000)}:R>`).join('\n');
+                        }
+                        if (stats.recentLogs.length > 3) {
+                            infoText += `\n> *...等共 ${stats.totalDownloads} 条记录*`;
+                        }
+                    } else {
+                        infoText += '> 暂无获取记录。';
+                    }
+
+                    embed.addFields({
+                        name: `📁 [ID: ${fileRecord.id}] ${fileRecord.file_name}`,
+                        value: infoText,
+                        inline: false
+                    });
+                }
+
+                if (!hasFullAccess) {
+                    embed.setFooter({ text: '具体的用户ID明细仅服务器管理员及服主可见' });
+                }
+
+                return await interaction.editReply({ embeds: [embed] });
+            }
+
+            // ===== 单文件查询模式：提供了 fileId =====
             
             // 1. 获取文件基础信息
             const fileRecord = await this.db.getFileRecord(fileId);
@@ -251,13 +317,6 @@ class ForumCommandsHandler {
                 return await interaction.editReply({ content: '❌ 找不到指定的作品ID，可能有误或已被删除。' });
             }
 
-            // 2. 权限校验
-            const guild = interaction.guild;
-            const member = await guild.members.fetch(userId).catch(() => null);
-            const isOwner = guild.ownerId === userId;
-            const isAdmin = member?.permissions?.has('Administrator');
-            const hasFullAccess = isOwner || isAdmin;
-            
             const isUploader = fileRecord.uploader_id === userId;
 
             // 如果既不是发布者也不是管理员/服主，拒绝访问
